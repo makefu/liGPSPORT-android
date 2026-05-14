@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    u-blox's AssistNow endpoint is plain HTTP — they do not serve TLS
+    on the GetOnlineData.ashx path. Android 9+ blocks cleartext by
+    default, so the AGPS pre-seed (see UploadPipeline.seedAgps) needs
+    an explicit hostname whitelist. Everything else stays HTTPS-only.
+
+    The official iGPSPORT app ships the same kind of whitelist for the
+    same hosts.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">online-live1.services.u-blox.com</domain>
+        <domain includeSubdomains="false">offline-live1.services.u-blox.com</domain>
+    </domain-config>
+</network-security-config>
