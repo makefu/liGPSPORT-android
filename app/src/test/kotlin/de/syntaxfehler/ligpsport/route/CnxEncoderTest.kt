@@ -1,9 +1,25 @@
 package de.syntaxfehler.ligpsport.route
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 class CnxEncoderTest {
+
+    // Save / restore the JVM default locale around each test so the
+    // de_DE regression test below doesn't leak into the rest of the
+    // suite. The encoder must always emit period-decimal coordinates
+    // regardless of what locale the surrounding JVM is in.
+    private var savedLocale: Locale = Locale.getDefault()
+
+    @Before
+    fun captureLocale() { savedLocale = Locale.getDefault() }
+
+    @After
+    fun restoreLocale() { Locale.setDefault(savedLocale) }
+
     @Test
     fun encode_minimal_route() {
         val route = RouteData(
@@ -72,5 +88,34 @@ class CnxEncoderTest {
         assertThat(xml).contains("<Points><Point>")
         assertThat(xml).contains("<Descr>Start</Descr>")
         assertThat(xml).contains("<PointsCount>1</PointsCount>")
+    }
+
+    @Test
+    fun coordinates_use_period_decimal_under_de_de_locale() {
+        // Regression for the "693 km off" bug: on a de_DE phone the
+        // old encoder used the JVM default locale for the first
+        // record's absolute lat/lon, producing `48,7561529` (comma
+        // decimal). The CNX <Tracks> field uses commas as field
+        // separators, so the parser on the BSC200 read each record as
+        // 4-5 values instead of 3 and the on-device goal distance
+        // ended up hundreds of kilometres wrong.
+        Locale.setDefault(Locale.GERMANY)
+        val route = RouteData(
+            name = "test",
+            points = listOf(
+                Point(48.7561529, 9.2263629, 300.0),
+                Point(48.7562000, 9.2264000, 305.0),
+            ),
+        )
+        val xml = String(CnxEncoder.encode(route, routeId = 1), Charsets.UTF_8)
+
+        // The first record must contain period decimals.
+        assertThat(xml).contains("<Tracks>48.7561529,9.2263629,30000;")
+        // Distance comes from BigDecimal.toPlainString() which is
+        // locale-independent — guard against any future refactor that
+        // pipes the value through a default-locale formatter.
+        val distance = Regex("<Distance>([^<]+)</Distance>").find(xml)!!.groupValues[1]
+        assertThat(distance).doesNotContain(",")
+        assertThat(distance).contains(".")
     }
 }

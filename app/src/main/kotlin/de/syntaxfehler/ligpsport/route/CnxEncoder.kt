@@ -2,6 +2,7 @@ package de.syntaxfehler.ligpsport.route
 
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.Locale
 
 /**
  * CNX (iGPSPORT proprietary) route format encoder — Kotlin port of
@@ -148,8 +149,18 @@ object CnxEncoder {
         v.setScale(0, RoundingMode.HALF_UP).toPlainString()
 
     private fun formatCoord(v: Double): String {
-        // Match Python f"{v:.7f}".rstrip("0").rstrip(".")
-        val s = "%.7f".format(v).trimEnd('0').trimEnd('.')
+        // Match Python `f"{v:.7f}".rstrip("0").rstrip(".")`.
+        //
+        // CRITICAL: pin to Locale.ROOT. Kotlin's `String.format` (and
+        // its `String.format` receiver-extension) honour the JVM
+        // default locale — on a de_DE phone `"%.7f".format(48.7561529)`
+        // is `"48,7561529"` (comma decimal). The CNX `<Tracks>` field
+        // uses commas as field separators within a record, so a
+        // comma-decimal first record collapses three fields into five,
+        // the BSC200 parser falls off the rails, and the on-device
+        // goal distance ends up hundreds of kilometres off (observed:
+        // 693 km for a route that's actually 9 km long).
+        val s = String.format(Locale.ROOT, "%.7f", v).trimEnd('0').trimEnd('.')
         return if (s.isEmpty()) "0" else s
     }
 
