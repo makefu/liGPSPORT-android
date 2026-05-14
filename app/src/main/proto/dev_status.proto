@@ -1,0 +1,88 @@
+syntax = "proto2";
+
+import "common.proto";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//码表状态操作类型
+enum DEV_STATUS_OPERATE_TYPE
+{
+	enum_DEV_STATUS_OPERATE_TYPE_NONE = 0;		//无效操作类型
+	enum_DEV_STATUS_OPERATE_TYPE_GET = 1;		//APP获取码表状态
+	enum_DEV_STATUS_OPERATE_TYPE_SEND = 2;		//码表发送状态到APP
+}
+
+//码表骑行状态
+enum DEV_CYCLING_STATUS
+{
+	DEV_CYCLING_STATUS_FREE = 0;			//非骑行状态
+	DEV_CYCLING_STATUS_DOING = 1;			//骑行状态
+	DEV_CYCLING_STATUS_PAUSE = 2;			//暂停状态
+}
+
+enum DEV_WIFI_STATUS
+{
+	DEV_WIFI_STATUS_IDLE = 1;			//WIFI空闲
+	DEV_WIFI_STATUS_MAP = 2;			//地图下载
+	DEV_WIFI_STATUS_FIRMWARE = 3;			//固件下载
+	DEV_WIFI_STATUS_UPLOAD = 4;			//WIFI上传
+	DEV_WIFI_STATUS_SET = 5;			//WIFI设置
+}
+
+//码表导航状态：开启/关闭
+enum DEV_NAVI_STATUS
+{
+	DEV_NAVI_STATUS_OFF = 0;			//导航关闭
+	DEV_NAVI_STATUS_ON = 1;				//导航开启
+}
+//-------------------------数据段定义----------------------------------------//
+
+//骑行状态
+message dev_cycling_status_massage
+{
+	optional DEV_CYCLING_STATUS dev_cycling_status = 1;
+	optional uint32 cycling_start_time = 2;			//未骑行则值为0
+}
+
+//GPS坐标
+message dev_gps_massage
+{
+	optional double latitude = 1;			//纬度，未定位则值为0
+	optional double longitude = 2;			//经度，未定位则值为0
+}
+
+//实时数据
+message rt_data_message{
+    optional uint32 real_time_speed =1;		//实时速度 单位mm/s
+    optional uint32 avg_speed = 2;		//平均速度 单位mm/s
+    optional uint32 riding_time = 3;		//骑行时间 单位ms
+    optional uint32 riding_distance = 4;	//骑行距离 单位cm
+    optional uint32 real_time_cad = 5;		//实时踏频 
+    optional uint32 real_time_hrm = 6;		//实时心率
+    optional uint32 avg_hrm = 7;		//平均心率
+    optional uint32 real_time_power = 8;	//实时功率
+    optional int32 total_height = 9;		//总升高度 单位m
+    optional int32 avg_rise = 10;		//平均上升速度 单位mm/s	
+    optional int32 cur_height = 11;		//当前高度 单位cm
+    optional int32 cur_slope = 12;		//当前坡度 单位万分之一
+    optional uint32 max_speed = 13;		//最大速度 单位mm/s
+    optional uint32 max_hrm = 14;		//最大心率
+    optional uint32 avg_cad = 15;		//平均踏频
+    optional uint32 max_cad = 16;		//最大踏频
+    optional uint32 avg_power = 17;		//平均功率
+    optional uint32 max_power = 18;		//最大功率
+    optional int32 course = 19;			//航向
+}
+
+//码表状态消息结构体
+message dev_status_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_DEV_STATUS];
+	required DEV_STATUS_OPERATE_TYPE op_type = 2[default = enum_DEV_STATUS_OPERATE_TYPE_NONE];
+	optional dev_cycling_status_massage dev_cycling_status_msg = 3;
+	optional dev_gps_massage dev_gps_msg = 4;
+	optional rt_data_message rt_data_msg = 5;
+	optional DEV_WIFI_STATUS wifi_status = 6;
+	optional DEV_NAVI_STATUS navi_status = 7;
+}
+
+

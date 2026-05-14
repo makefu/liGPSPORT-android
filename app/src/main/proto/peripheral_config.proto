@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+//此文件定义用户配置的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_CONFIG_SERVICE
+{
+    PCS_UNSPECIFIED = 0;
+    reserved 1 to 3; 
+    PCS_SHUTDOWN = 4;      //关机
+    PCS_SLEEP = 5;         //睡眠
+	PCS_LIGHT_MODE = 6;	   //灯模式
+	PCS_DATA_BROADCAST = 7;//数据广播
+    reserved 8 to 20;
+    PCS_ALL_CONFIG = 21;    //所有配置
+    PCS_ALL_CONFIG_RESET = 22;  //所有配置重置
+}
+
+enum enum_PERIPHERAL_CONFIG_LIGHT_MODE
+{
+    PCLM_UNSPECIFIED = 0;
+    reserved 1 to 3;
+    DEVICE_SCENE_OFF = 4;               //关闭模式
+    DEVICE_SCENE_DEFAULT = 5;	        //常亮模式
+    DEVICE_SCENE_TEAM = 6;		            //车队模式
+    DEVICE_SCENE_GRADIENT = 7;		    //渐变呼吸模式
+    DEVICE_SCENE_NIGHT = 8;	                //夜间闪烁模式
+    DEVICE_SCENE_DAYLIGHT = 9;          //日间闪烁模式
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_CONFIG_OPERATE
+{
+    PCO_UNSPECIFIED = 0;
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//关机
+message peripheral_config_data_shutdown
+{
+    bool shutdown_switch = 1;//开关
+    uint32 countdown = 2;//关机倒计时，单位：s
+}
+
+//休眠
+message peripheral_config_data_sleep
+{
+    bool sleep_switch = 1;//开关
+    uint32 countdown = 2;//休眠倒计时，单位：s
+}
+
+//灯模式
+message peripheral_config_light_mode
+{
+    enum_PERIPHERAL_CONFIG_LIGHT_MODE light_mode = 1;
+}
+
+//数据广播
+message peripheral_config_data_broadcast
+{
+    bool data_switch = 1;//开关
+}
+
+//消息综合
+message peripheral_config_message
+{     
+    peripheral_config_data_shutdown shutdown = 1;
+    peripheral_config_data_sleep sleep = 2;
+	peripheral_config_light_mode light = 3;
+	peripheral_config_data_broadcast data_service = 4;
+
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_config_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_CONFIG_SERVICE sub_service_type = 3;
+    PERIPHERAL_CONFIG_OPERATE sub_operate_type = 4;
+    peripheral_config_message message = 5;
+}

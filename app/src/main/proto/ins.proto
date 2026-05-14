@@ -1,0 +1,77 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义智能通知服务相关消息类型
+
+//智能通知服务类型
+enum INS_SERVICE_TYPE
+{
+	enum_INS_SERVICE_TYPE_NONE = 0;			//无效智能通知服务类型
+	enum_INS_SERVICE_TYPE_MAIN = 1;			//智能通知服务，用于控制来电和短信公共配置，如智能通知开启、关闭
+	enum_INS_SERVICE_TYPE_CALL = 2;			//来电通知服务
+	enum_INS_SERVICE_TYPE_NOTE = 3;			//短信通知服务
+
+}
+
+//智能通知操作类型
+enum INS_OPERATE_TYPE
+{
+	enum_INS_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_INS_OPERATE_TYPE_CTRL = 1;			//启动或关闭智能通知服务
+	enum_INS_OPERATE_TYPE_INCOMING_CALL = 2;	//电话来电
+	enum_INS_OPERATE_TYPE_ANSWER_CALL = 3;		//接听电话
+	enum_INS_OPERATE_TYPE_REJECT_CALL = 4;		//拒接电话
+	enum_INS_OPERATE_TYPE_CHECK_CALL = 5;		//查看电话
+	enum_INS_OPERATE_TYPE_INCOMING_NOTE = 6;	//接收短信
+	enum_INS_OPERATE_TYPE_CHECK_NOTE = 7;		//查看短信
+}
+
+enum ANCS_CATAGORY_ID
+{
+    OTHER = 0;                /**< The iOS notification belongs to the "other" category.  */
+    INCOMING_CALL = 1;        /**< The iOS notification belongs to the "Incoming Call" category. */
+    MISSED_CALL = 2;          /**< The iOS notification belongs to the "Missed Call" category. */
+    VOICE_MAIL = 3;           /**< The iOS notification belongs to the "Voice Mail" category. */
+    SOCIAL = 4;               /**< The iOS notification belongs to the "Social" category. */
+    ID_SCHEDULE = 5;          /**< The iOS notification belongs to the "Schedule" category. */
+    ID_EMAIL = 6;             /**< The iOS notification belongs to the "E-mail" category. */
+    NEWS = 7;                 /**< The iOS notification belongs to the "News" category. */
+    HEALTH_AND_FITNESS = 8;   /**< The iOS notification belongs to the "Health and Fitness" category. */
+    BUSINESS_AND_FINANCE = 9; /**< The iOS notification belongs to the "Buisness and Finance" category. */
+    LOCATION = 10;            /**< The iOS notification belongs to the "Location" category. */
+    ENTERTAINMENT = 11;       /**< The iOS notification belongs to the "Entertainment" category. */
+}
+
+message ancs_filter_message
+{
+	optional ANCS_CATAGORY_ID catagory_id = 1;
+	optional string app_identifier = 2;
+}
+
+//智能通知服务数据段消息类型
+message ins_data_message{
+	optional bytes tel_num = 1;	//电话号码
+	optional string name = 2;	//联系人
+	optional string content = 3;	//内容
+	optional string time = 4;	//时间格式“2019-04-08 14：21”
+	optional uint32 uid = 5;		//用于区分是否为同一条短信息或者来电
+	optional uint32 count = 6;		//用于短信分包发送，区分是第几包，从0开始；
+}
+
+//智能通知消息类型
+//消息格式：服务类型 + 智能通知服务类型 + 操作类型 + 数据段
+//使用说明：其中智能通知服务类型enum_INS_SERVICE_TYPE_MAIN成员是指与智能通知服务相关的操作如开启关闭等
+message ins_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_INS];
+	required INS_SERVICE_TYPE ins_service_type = 2[default = enum_INS_SERVICE_TYPE_NONE];
+	required INS_OPERATE_TYPE ins_operate_type = 3[default = enum_INS_OPERATE_TYPE_NONE];
+
+	optional ins_data_message ins_data_msg = 4;
+	optional uint32 config = 5;					//0--开  1--关（最初以服务器为主，服务器逻辑与app及码表相反）
+	repeated ancs_filter_message ancs_filter_msg = 6;
+}
+
+

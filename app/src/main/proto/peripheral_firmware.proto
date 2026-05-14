@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+//此文件定义固件升级的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_FIRMWARE_SERVICE
+{
+    PFS_UNSPECIFIED = 0;
+    PFS_ENTER_DFU = 1;  			//进入DFU升级
+    PFS_MCU_UPDATE = 2; 			//MCU升级
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_FIRMWARE_OPERATE
+{
+    PFO_UNSPECIFIED = 0;
+	PFO_MCU_UPDATE_START 	= 1;
+	PFO_MCU_UPDATE_PROCESS 	= 2;
+	PFO_MCU_UPDATE_END 	 	= 3;
+	PFO_MCU_UPDATE_ERROR 	= 4;
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//消息综合
+message peripheral_firmware_message 
+{   
+	reserved 1 to 5;
+	uint32 bin_packet_size = 6;
+	bytes bin_packet_data = 7;
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_firmware_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_FIRMWARE_SERVICE sub_service_type = 3;
+    PERIPHERAL_FIRMWARE_OPERATE sub_operate_type = 4;
+    peripheral_firmware_message message = 5;
+}

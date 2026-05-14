@@ -1,0 +1,48 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义骑行数据上传服务相关的消息类型
+
+//骑行数据上传服务操作类型
+enum CYCLING_DATA_OPERATE_TYPE {
+    enum_CYCLING_DATA_OPERATE_TYPE_NONE = 0;		//无效操作类型
+    enum_CYCLING_DATA_OPERATE_TYPE_LIST_GET = 1;	//APP获取骑行数据文件列表
+    enum_CYCLING_DATA_OPERATE_TYPE_LIST_SEND = 2;	//码表发送骑行数据文件列表
+    enum_CYCLING_DATA_OPERATE_TYPE_FILE_GET = 3;	//APP获取指定文件
+    enum_CYCLING_DATA_OPERATE_TYPE_FILE_SEND = 4;	//码表发送指定文件,4K完成
+    enum_CYCLING_DATA_OPERATE_TYPE_FILE_DEL = 5;	//APP删除指定文件
+    enum_CYCLING_DATA_OPERATE_TYPE_ALL_DEL = 6;		//APP删除所有文件
+    enum_CYCLING_DATA_OPERATE_TYPE_AUTO_UPLOAD = 7;	//骑行数据自动上传
+	enum_CYCLING_DATA_OPERATE_TYPE_LIST_NUM_GET = 8; //骑行列表的数量，包括支持的最大传输数量
+}
+  
+//文件标志消息类型
+message cycling_data_file_flag_message {
+    required uint32 timestamp = 1;	//时间戳
+    optional uint32 file_size = 2;	//文件大小
+    optional string user_id = 3;	//用户ID
+    optional string device_id = 4;	//设备ID
+}
+
+message cycling_data_auto_upload_message{
+	optional uint32 status = 1;					//1---关闭  0---开启
+	optional string cycling_data_url = 2;		//自动上传的URL地址
+	optional string cycling_data_check_url = 3;	//自动上传的活动检测URL地址
+}
+
+//骑行数据上传服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message cycling_data_msg {
+    required service_type_index service_type = 1 [default = enum_SERVICE_TYPE_INDEX_CYCLING_DATA];
+    required CYCLING_DATA_OPERATE_TYPE cycling_data_operate_type = 2 [default = enum_CYCLING_DATA_OPERATE_TYPE_NONE];
+
+    repeated cycling_data_file_flag_message cycling_data_file_flag_msg = 3;
+    optional bytes file_content = 4;					//文件内容
+    optional cycling_data_auto_upload_message cycling_data_auto_upload_msg = 5;	//骑行活动WIFI自动上传
+	optional file_list_get_message list_msg = 6;		//文件列表
+}
+
+

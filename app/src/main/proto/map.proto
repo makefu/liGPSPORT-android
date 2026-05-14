@@ -1,0 +1,48 @@
+syntax = "proto2";
+
+import "common.proto";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//此文件定义地图管理服务相关消息类型
+
+//地图管理操作类型
+enum MAP_OPERATE_TYPE
+{
+	enum_MAP_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_MAP_OPERATE_TYPE_LIST_GET = 1;		//获取地图列表
+	enum_MAP_OPERATE_TYPE_LIST_SEND = 2;		//发送地图列表
+	enum_MAP_OPERATE_TYPE_ASSIGN_UPDATE = 3;	//指定地图更新
+	enum_MAP_OPERATE_TYPE_ALL_UPDATE = 4;		//更新所有地图
+	enum_MAP_OPERATE_TYPE_DOWNLOAD = 5;		//地图下载
+	enum_MAP_OPERATE_TYPE_SUCCESS = 6;		//地图下载/更新成功
+	enum_MAP_OPERATE_YPTE_CANCEL_DOWNLOAD = 7;	//取消下载
+	enum_MAP_OPERATE_TYPE_PROGRESS_GET = 8;		//地图下载进度获取	
+	enum_MAP_OPERATE_TYPE_PROGRESS_UPLOAD = 9;	//地图下载进度上传
+	enum_MAP_OPERATE_TYPE_ASSIGN_DEL = 10;		//删除指定地图
+	enum_MAP_OPERATE_TYPE_ALL_DEL = 11;		//删除所有地图
+	enum_MAP_CONFIG_CMD = 12;			//地图配置：自动旋转、北向朝上
+}
+
+//地图管理服务数据段消息类型
+message map_data_message{
+	optional uint32 map_id = 1;			//地图ID
+	optional string area_id = 2;			//区域ID
+	optional uint32 version = 3;			//地图版本ID
+	optional string url = 4;			//地图服务器端下载地址
+	optional uint32 size = 5;			//地图大小
+	optional uint32 area_type = 6;			//位于哪个洲ID
+	optional uint32 progress = 7;			//下载进度百分比
+	optional uint32 config = 8;			//地图配置：0x00---自动旋转（行向朝上） 0x01---北向朝上
+}
+
+//地图管理消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message map_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_MAP];
+	required MAP_OPERATE_TYPE map_operate_type = 2[default = enum_MAP_OPERATE_TYPE_NONE];
+
+	repeated map_data_message map_data_msg = 3;
+}
+
+

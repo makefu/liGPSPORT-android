@@ -1,0 +1,44 @@
+syntax = "proto2";
+
+import "common.proto";
+
+//此文件定义地图管理服务相关消息类型
+
+//地图管理操作类型
+enum map_op_type
+{
+	MAP_OP_INVALID = 0;
+	MAP_OP_LIST_NUM_GET = 1;
+	MAP_OP_LIST_GET = 2;
+	MAP_OP_DOWNLOAD = 3;
+	MAP_OP_UPDATE = 4;
+	MAP_OP_DELETE = 5;
+	MAP_OP_SET = 6;		
+}
+
+message map_list_message{
+	optional string map_country_name = 1;
+	optional uint32 map_id = 2;
+	optional string map_coordinates = 3;
+}
+
+enum map_op_state
+{
+	MAP_OP_STATE_INVALID = 0;
+	MAP_OP_STATE_START = 1;
+	MAP_OP_STATE_END = 2;
+}
+
+
+//地图管理消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message map_new_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_MAP_NEW];
+	required map_op_type map_op_type = 2[default = MAP_OP_INVALID];
+
+	repeated map_list_message map_list_msg = 3;
+	optional map_op_state map_op_sta = 4;
+	optional file_list_get_message map_list_get_msg = 5;
+}
+
+

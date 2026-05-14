@@ -1,0 +1,132 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//训练模块版本信息说明，后续有更新请注意更新版本日志
+//V1.00版本，设计于2020/11/23日
+
+
+//此文件定义训练功能相关的消息类型
+enum TRAINING_SUB_OPERATE_TYPE{
+	enum_TRAINING_SUB_OPERATE_TYPE_INAVLIDE = 0x00;
+
+	enum_TRAINING_SUB_OPERATE_TYPE_SET_USE = 0x01;
+	enum_TRAINING_SUB_OPERATE_TYPE_SET_NAME = 0x02;
+	enum_TRAINING_SUB_OPERATE_TYPE_SET_REMIND = 0x03;  //训练提醒
+
+	enum_TRAINING_SUB_OPERATE_TYPE_GET_MODULE_INFO = 0x11;
+	enum_TRAINING_SUB_OPERATE_TYPE_GET_LIST = 0x12;
+	enum_TRAINING_SUB_OPERATE_TYPE_GET_LIST_NUM = 0x13;
+
+	enum_TRAINING_SUB_OPERATE_TYPE_ADD_FILE = 0x21;
+
+	enum_TRAINING_SUB_OPERATE_TYPE_DEL_FILE = 0x31;
+}
+
+enum TRAINING_FILE_TYPE
+{
+	enum_TRAINING_FILE_TYPE_INVALIDE = 0;
+	enum_TRAINING_FILE_TYPE_JSON = 1;			//.json
+	enum_TRAINING_FILE_TYPE_XML = 2;			//.xml
+	enum_TRAINING_FILE_TYPE_FIT = 3;			//.fit
+	enum_TRAINING_FILE_TYPE_CSV = 4;			//.csv
+	enum_TRAINING_FILE_TYPE_GPX = 5;			//.gpx
+	enum_TRAINING_FILE_TYPE_GZ = 6;				//.gz
+	enum_TRAINING_FILE_TYPE_HRM = 7;			//.hrm
+	enum_TRAINING_FILE_TYPE_HST = 8;			//.hst
+	enum_TRAINING_FILE_TYPE_PWPB = 9;			//.pwpb
+	enum_TRAINING_FILE_TYPE_PWX = 10;			//.pwx
+	enum_TRAINING_FILE_TYPE_SDF = 11;			//.sdf
+	enum_TRAINING_FILE_TYPE_SRM = 12;			//.srm
+	enum_TRAINING_FILE_TYPE_TCX = 13;			//.tcx
+	enum_TRAINING_FILE_TYPE_TXT = 14;			//.txt
+	enum_TRAINING_FILE_TYPE_WKO = 15;			//.wko
+	enum_TRAINING_FILE_TYPE_XLSX = 16;			//.xlsx
+	enum_TRAINING_FILE_TYPE_CUSTOM = 254;
+}
+
+enum TRAINING_TYPE
+{
+	enum_TRAINING_TYPE_INVALID = 0;
+	enum_TRAINING_TYPE_WORKOUT = 1;
+	enum_TRAINING_TYPE_SEGMENT = 2;
+	enum_TRAINING_TYPE_INDOOR = 3;
+	enum_TRAINING_TYPE_CUSTOM = 254;
+}
+
+enum TRAINING_OBJECT
+{
+	enum_TRAINING_OBJECT_INVALID = 0;
+	enum_TRAINING_OBJECT_TIME = 1;
+	enum_TRAINING_OBJECT_DISTANCE = 2;
+	enum_TRAINING_OBJECT_SPD = 3;
+	enum_TRAINING_OBJECT_CALORIE = 4;
+	enum_TRAINING_OBJECT_CLIMB = 5;
+	enum_TRAINING_OBJECT_PWR = 6;
+	enum_TRAINING_OBJECT_PWR_ZONE = 7;	
+	enum_TRAINING_OBJECT_HRM = 8;
+	enum_TRAINING_OBJECT_HRM_ZONE = 9;
+	enum_TRAINING_OBJECT_CUSTOM = 254;
+}
+
+//训练目标消息类型
+message training_object_msg{
+	required TRAINING_OBJECT trainning_obj = 1[default = enum_TRAINING_OBJECT_INVALID];
+	optional uint32 data_max = 2;				//当目标只存在于一个数据的时候，赋值给data_max，data_min赋值为0xffffffff
+	optional uint32 data_min = 3;
+}
+
+//训练文件消息类型
+message training_data_message {
+    optional uint32 file_id = 1;									//课程ID	
+    optional string file_name = 2;									//课程名（长度为28字节，包含'\0'）
+    optional TRAINING_FILE_TYPE file_type = 3; 
+	optional uint32 training_period = 4;							//训练时长
+	optional TRAINING_TYPE training_type = 5;						//训练类型
+	optional training_object_msg training_object_message = 6;		//训练目标
+	optional uint32 training_time = 7;								//训练阶段时间
+	reserved 8 to 12;
+    optional bytes file_content = 13;								//训练文件内容	 
+}
+
+//训练文件使用状态
+enum TRAINING_FILE_STATUS
+{
+	enum_TRAINING_INVALID_STATUS = 0;
+	enum_TRAINING_USED_STATUS = 1;
+	enum_TRAINING_UNUSED_STATUS = 2;
+}
+
+//列表信息消息类型，返回至APP的信息
+message training_list_message{
+	optional uint32 file_id = 1;
+	optional TRAINING_FILE_TYPE file_type = 2;
+	optional string file_name = 3;
+	optional TRAINING_FILE_STATUS status = 4;
+	optional uint32 training_period = 5;							//训练时长
+}
+
+//训练模块信息消息类型
+message training_module_info_message{
+	repeated TRAINING_SUB_OPERATE_TYPE sub_operate_type = 1;
+	optional uint32 training_module_version = 2[default = 100];		//训练模块协议版本，如V1.01则为101
+}
+
+//训练功能消息类型
+//消息格式：服务类型 + 操作类型 + 子操作类型 + 数据段
+message training_message {
+    required service_type_index service_type = 1 [default = enum_SERVICE_TYPE_INDEX_TRAINING];
+    required SERVICE_OPERATE_TYPE operate_type = 2 [default = enum_SERVICE_OPERATE_TYPE_NONE];
+	required TRAINING_SUB_OPERATE_TYPE training_sub_operate_type = 3[default = enum_TRAINING_SUB_OPERATE_TYPE_INAVLIDE];
+ 
+    optional training_data_message training_data_msg = 4;
+	optional file_list_get_message training_list_get_msg = 5;
+	repeated training_list_message training_list_msg = 6;
+	reserved 7 to 12;
+	
+	optional training_module_info_message module_info_msg = 13;
+}
+
+

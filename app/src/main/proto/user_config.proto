@@ -1,0 +1,36 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义智能通知服务相关消息类型
+
+//智能通知操作类型
+enum USER_CONFIG_OPERATE_TYPE
+{
+	enum_USER_CONFIG_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_USER_CONFIG_OPERATE_TYPE_SET = 1;			//发送/设置用户信息
+	enum_USER_CONFIG_OPERATE_TYPE_GET = 2;			//获取用户配置信息	
+}
+
+//智能通知服务数据段消息类型
+message user_config_data_msg{
+	optional uint32 sex = 1;				//1表示男性 0表示女性
+	optional uint32 weight = 2;				//体重,单位 100g
+	optional uint32 age = 3;				//年龄
+	optional uint32 height = 4;				//身高,单位cm
+	optional uint32 wheel_dia = 5;				//轮径,单位mm
+	optional uint32 bike_weight = 6;			//车重,单位 100g
+	optional int32 time_zone = 7;				//时区，单位 s
+	optional string member_id = 8;				//用户ID，最大长度定义为40个字节
+}
+
+message user_config_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_USER_CONFIG];
+	required USER_CONFIG_OPERATE_TYPE user_config_operate_type = 2[default = enum_USER_CONFIG_OPERATE_TYPE_NONE];
+
+	optional user_config_data_msg user_config_data_message = 3;
+}
+
+

@@ -1,0 +1,32 @@
+# Build outputs
+build/
+app/build/
+*/build/
+.gradle/
+.gradle-cache/
+*.apk
+*.aab
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+captures/
+
+# Nix
+result
+result-*
+
+# Emulator state
+.android/
+
+# Keystore (release signing — never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# Misc
+.DS_Store
+*.log
+tmp/
+.claude/

@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+//此文件定义特定设备-radar的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_RADAR_SERVICE
+{
+    PHS_NSPECIFIED_RADAR = 0; 
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_RADAR_OPERATE
+{
+    PHO_NSPECIFIED_RADAR = 0;
+	PHO_RADAR_TARGET	 = 1;
+	PHO_ACC_SAMPLE       = 2;
+}
+
+message peripheral_radar_target_message {
+	reserved 1 to 5;
+    int32 level = 6;	//危险等级:0 无效 1 低 2 高
+    int32 range = 7;	//距离
+    int32 speed = 8;	//相对速度
+}
+
+message peripheral_acc_message {
+	reserved 1 to 5;
+    int32 x = 6;
+    int32 y = 7;
+    int32 z = 8;
+}
+
+//消息综合
+message peripheral_radar_message {
+	reserved 1 to 5;
+	repeated peripheral_radar_target_message radar_info = 6;
+	repeated peripheral_acc_message acc_info = 7;
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_radar_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_RADAR_SERVICE sub_service_type = 3;
+    PERIPHERAL_RADAR_OPERATE sub_operate_type = 4;
+	peripheral_radar_message meaagse = 5;
+}

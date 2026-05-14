@@ -1,0 +1,68 @@
+ syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义骑行线路规划服务相关的消息类型
+
+//骑行线路规划服务操作类型
+enum ROUTE_PLAN_OPERATE_TYPE
+{
+	enum_ROUTE_PLAN_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_ROUTE_PLAN_OPERATE_TYPE_LIST_GET = 1;		//APP获取线路文件列表
+	enum_ROUTE_PLAN_OPERATE_TYPE_LIST_SEND = 2;		//码表发送线路文件列表
+	enum_ROUTE_PLAN_OPERATE_TYPE_FILE_DEL = 3;		//APP删除指定文件
+	enum_ROUTE_PLAN_OPERATE_TYPE_FILE_SEND = 4;		//APP发送指定文件
+	enum_ROUTE_PLAN_OPERATE_TYPE_FILE_USE = 5;		//APP指定使用线路	
+	enum_ROUTE_PLAN_OPERATE_TYPE_FILES_DEL = 6;		//APP删除多条文件
+	enum_ROUTE_PLAN_OPERATE_TYPE_LIST_NUM_GET = 7;	//APP获取list信息
+	enum_ROUTE_PLAN_OPERATE_TYPE_RENAME = 8;		//修改文件名
+}
+
+
+enum ROUTE_PLAN_FILE_TYPE
+{
+	enum_ROUTE_PLAN_FILE_TYPE_INVALID = 0;
+	enum_ROUTE_PLAN_FILE_TYPE_CNX = 1;
+	enum_ROUTE_PLAN_FILE_TYPE_GPX = 2;
+	enum_ROUTE_PLAN_FILE_TYPE_FIT =3;
+	enum_ROUTE_PLAN_FILE_TYPE_TCX = 4;
+	enum_ROUTE_PLAN_FILE_TYPE_XML = 5;
+}
+
+//导航文件使用状态
+enum ROUTE_PLAN_FILE_STATUS
+{
+	enum_INVALID_STATUS = 0;
+	enum_USED_STATUS = 1;
+	enum_UNUSED_STATUS = 2;
+}
+
+
+message route_plan_info_message{
+	optional uint32 id = 1;								//训练文件的ID
+	optional ROUTE_PLAN_FILE_TYPE file_type = 2[default = enum_ROUTE_PLAN_FILE_TYPE_INVALID];
+	optional string name = 3;							//训练的文件名
+	optional uint32 total_distance = 4;						//导航线路总长度
+	optional double longitude_start = 5;					//导航起点经度
+	optional double latitude_start = 6;						//导航起点纬度
+	optional ROUTE_PLAN_FILE_STATUS status = 7;			//导航文件使用状态
+}
+
+//骑行线路规划服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message route_plan_data_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_ROUTE_PLAN];
+	required ROUTE_PLAN_OPERATE_TYPE route_plan_operate_type = 2[default = enum_ROUTE_PLAN_OPERATE_TYPE_NONE];
+
+	repeated string line_id = 3;						//线路ID		此命令可以作废
+	optional bytes file_content = 4;					//线路文件内容
+	repeated route_plan_info_message route_plan_info_msg = 5;
+	
+	reserved 6 to 11;
+
+	optional file_list_get_message route_list_get_msg = 12;	
+}
+
+

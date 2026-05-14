@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+import "peripheral_info.proto";
+//此文件定义设备信息的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_OEM_SERVICE
+{
+    POS_UNSPECIFIED = 0;
+    POS_BLE_INFO = 1;          //蓝牙信息
+    POS_DEVICE_INFO = 2;       //设备信息
+    POS_MANUFACTURER_INFO = 3; //厂商信息
+    reserved 4 to 10;
+    POS_ALL_OEM = 11;          //所有oem信息
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_OEM_OPERATE
+{
+    POO_UNSPECIFIED = 0;
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//蓝牙信息
+message peripheral_oem_data_ble
+{
+    string name = 1;   //蓝牙名
+}
+
+//设备信息
+message peripheral_oem_data_device
+{
+    PERIPHERAL_INFO_MODEL_TYPE model = 1; //设备型号
+    string name = 2; //设备名
+    uint32 id = 3;   //设备ID
+}
+
+//厂商信息
+message peripheral_oem_data_manufacturer
+{
+    string name = 1; //厂商名
+    uint32 id = 2;   //厂商ID
+}
+
+//消息综合
+message peripheral_oem_message 
+{
+    peripheral_oem_data_ble ble_info = 1;
+    peripheral_oem_data_device device_info = 2;
+    peripheral_oem_data_manufacturer manufacturer_info = 3;
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_oem_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_OEM_SERVICE sub_service_type = 3;
+    PERIPHERAL_OEM_OPERATE sub_operate_type = 4;
+    peripheral_oem_message message = 5;
+}

@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+//此文件定义特定设备-HR心率的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_HR_SERVICE
+{
+    PHS_NSPECIFIED = 0; 
+    reserved 1 to 5; 
+    PHS_HRM_WARN = 6;    //心率警示
+    reserved 7 to 10;
+    PHS_HRM_ZONE = 11;    //心率区间
+    reserved 12 to 15;
+    PHS_SPORT_MODE = 16;   //运动模式
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_HR_OPERATE
+{
+    PHO_NSPECIFIED = 0; 
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//警示值类型
+enum PERIPHERAL_HR_WARN_TYPE
+{
+    PHW_UNSPECIFIED = 0;
+    PHW_CUSTOM = 1;     //自定数值
+    PHW_ZONE = 2;       //区间选择
+}
+//通用值警示
+message peripheral_hr_data_warn
+{
+    bool warn_switch = 1;   //警示开关
+    bool high_switch = 2;   //高值警示开关
+    bool low_switch = 3;    //低值警示开关
+    PERIPHERAL_HR_WARN_TYPE high_warn_type = 4; //过高警示值类型
+    PERIPHERAL_HR_WARN_TYPE low_warn_type = 5;  //过低警示值类型
+    int64 high_value = 6;   //警示高值
+    int64 low_value = 7;    //警示低值
+}
+
+//通用区间
+message peripheral_hr_data_zone
+{
+    repeated int64 value = 1; //6个数据如 20 60 150 170 190 220，则表示5个区间 20-60 60-150 150-170 170-190 190-220，最大心率220
+}   
+
+//运动模式类型
+enum PERIPHERAL_HR_SPORT_MODE_TYPE
+{
+    PHSM_UNSPECIFIED = 0;
+    PHSM_DEFAULT = 1; //通用模式
+    PHSM_RUN = 2;     //跑步模式
+    PHSM_BIKE = 3;    //自行车模式
+    PHSM_FITNESS = 4; //运动模式
+}
+//运动模式
+message peripheral_hr_data_sport_mode
+{
+    bool key_switch = 1;    //允许按键切换运动模式
+    PERIPHERAL_HR_SPORT_MODE_TYPE mode = 2; //运动模式
+}
+
+//消息综合
+message peripheral_hr_message {
+    reserved 1 to 5;
+    peripheral_hr_data_warn hrm_warn = 6;
+    reserved 7 to 10;
+    peripheral_hr_data_zone hr_zone = 11;
+    reserved 12 to 15;
+    peripheral_hr_data_sport_mode sport_mode = 16;
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_hr_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_HR_SERVICE sub_service_type = 3;
+    PERIPHERAL_HR_OPERATE sub_operate_type = 4;
+    peripheral_hr_message message = 5;
+}

@@ -1,0 +1,34 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义蓝牙服务相关的消息类型
+
+//蓝牙操作类型
+enum BLE_OPERATE_TYPE
+{ 
+	enum_BLE_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_BLE_OPERATE_TYPE_BOND_INFO = 1;		//蓝牙绑定信息操作命令，包括获取与发送
+	enum_BLE_OPERATE_TYPE_BOND_REQ	= 2;		//蓝牙绑定请求
+	enum_BLE_OPERATE_TYPE_CONNECT_STATUS = 3;	//蓝牙连接状态命令
+	enum_BLE_OPERATE_TYPE_UNBOND = 4;		//蓝牙解绑定
+}
+
+
+message ble_data_message
+{
+	optional uint32 status = 1;			//绑定状态 1---表示已绑定  0表示未绑定
+							//连接状态 1---表示连接	   0表示未连接
+	optional string member_id = 2;			//用户member_id
+}
+
+//蓝牙服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message ble_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_BLE];
+	required BLE_OPERATE_TYPE ble_operate_type = 2[default = enum_BLE_OPERATE_TYPE_NONE];
+
+	repeated ble_data_message ble_data_msg = 3;
+}

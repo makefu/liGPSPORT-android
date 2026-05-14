@@ -1,0 +1,40 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义设备版本信息服务包括软件、硬件、协议版本信息
+
+//设备版本服务服务操作类型
+enum OPERATE_TYPE
+{
+	enum_OPERATE_TYPE_NONE = 0;			//无效操作类型
+
+	enum_OPERATE_TYPE_SET = 1;			
+	enum_OPERATE_TYPE_GET = 2;			
+	enum_OPERATE_TYPE_SEND = 3;
+	enum_OPERATE_TYPE_ADD = 4;
+	enum_OPERATE_TYPE_DEL = 5;
+}
+
+//版本信息结构体
+message version_msg{
+	optional uint32 main_boot_ver = 1;				//主MCU boot版本
+	optional uint32 main_app_ver = 2;				//主MCU APP版本
+	optional uint32 ble_boot_ver = 3;				//BLE BOOT版本
+	optional uint32 ble_app_ver = 4;				//BLE APP版本
+	optional uint32 hardware_ver = 5;				//硬件版本
+	optional uint32 protocol_ver = 6[default = 101];		//蓝牙协议版本V1.01
+	optional string compile_time = 7;				//编译时间
+}
+
+//消息格式：服务类型 + 操作类型 + 数据段
+message dev_ver_info_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_DEV_VER_INFO];
+	required OPERATE_TYPE operate_type = 2[default = enum_OPERATE_TYPE_NONE];
+
+	optional version_msg version_message = 3;
+}
+
+

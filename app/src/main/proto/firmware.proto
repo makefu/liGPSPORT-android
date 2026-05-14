@@ -1,0 +1,42 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义固件升级服务相关的消息类型
+
+//固件升级操作类型
+enum FIRMWARE_OPERATE_TYPE
+{
+	enum_FIRMWARE_OPERATE_TYPE_NONE = 0;		//无效操作类型
+	enum_FIRMWARE_OPERATE_TYPE_GET_VERSION = 1;	//APP获取固件版本
+	enum_FIRMWARE_OPERATE_TYPE_SEND_VERSION = 2;	//码表发送固件版本
+	enum_FIRMWARE_OPERATE_TYPE_MCU_UPDATE = 3;	//MCU固件升级命令
+	enum_FIRMWARE_OPERATE_TYPE_PROGRESS = 4;	//码表发送升级进度百分比
+	enum_FIRMWARE_OPERATE_TYPE_BLE_UPDATE = 5;	//BLE固件升级命令	
+}
+
+//固件升级数据段
+message firmware_data_message
+{
+	optional uint32 mcu_firmware_ver = 1;		//MCU固件版本
+	optional uint32 ble_firmware_ver = 2;		//BLE固件版本
+	optional uint32 firmware_size = 3;		//固件大小
+	optional string url = 4;			//MCU固件服务器下载地址
+	optional uint32 process = 5;			//升级进度百分比
+	optional uint32 ble_boot_firmware_ver = 6;	//BLE boot固件版本
+
+}
+
+//固件升级服务消息类型
+//消息格式：服务类型 + 后台服务类型 + 操作类型 + 数据段
+//说明：固件升级服务类型中enum_FIRMWARE_SERVICE_TYPE_MAIN与操作类型获取/发送固件版本一起使用
+message firmware_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_FIRMWARE];
+	required FIRMWARE_OPERATE_TYPE firmware_operate_type = 2[default = enum_FIRMWARE_OPERATE_TYPE_NONE];
+
+	optional firmware_data_message firmware_data_msg = 3;
+}
+
+

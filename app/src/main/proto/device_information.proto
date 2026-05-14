@@ -1,0 +1,225 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+// [START csharp_declaration]
+option csharp_namespace = "Google.Protobuf.DeviceInformation";
+// [END csharp_declaration]
+
+enum FunctionType{
+  DATA_MANAGEMENT_MODULE = 0;    //数据管理
+  DATA_MANAGEMENT_ACTIVITIES_FUNCTION = 1;   //数据管理-活动列表
+  DATA_MANAGEMENT_ACTIVITIES_LIST_INFORMATION_FUNCTION = 2;   //数据管理-活动列表信息
+  DATA_MANAGEMENT_ROUTES_FUNCTION = 3;   //数据管理-线路列表
+  DATA_MANAGEMENT_WORKOUTS_FUNCTION = 4;   //数据管理-训练列表
+  DATA_MANAGEMENT_SYNC_SETTING_FUNCTION = 5;   //同步设置
+  DEVICE_SETTINGS_MODULE = 6;   //设备设置(老设备)
+  PROMPT_FOR_DELETION_WHEN_THE_DEVICE_ACTIVE_FILE_IS_FULL = 7;//设备活动文件已满时提示删除
+  reserved 8 to 30;
+
+  NOTIFICATION_MODULE = 31;   //通知设置
+  NOTIFICATION_INCOMING_CALL_FUNCTION = 32;
+  NOTIFICATION_INCOMING_MESSAGE_FUNCTION = 33;
+  NOTIFICATION_APP_FUNCTION = 34;
+  reserved 35 to 50;
+
+  NAVIGATION_MAP_MODULE = 51;   //导航地图
+  reserved 52 to 70;
+
+  UNIT_MODULE = 71;   //公英制
+  UNIT_METRIC_FUNCTION = 72;   //公制
+  UNIT_IMPERIAL_FUNCTION = 73;   //英制
+  UNIT_CUSTOMIZE_FUNCTION = 74;   //自定义(混合制)
+  reserved 75 to 90;
+
+  CYCLING_COMPUTER_CONFIG_MODULE = 91;   //码表配置
+  KEY_FUNCTION_SET_SUB_MODULE = 92;   //按键功能设置
+
+  AUTO_FUNCTION_SET_SUB_MODULE = 93;   //自动功能配置
+  AUTO_PAUSE_FUNCTION = 94;   //自动暂停
+  AUTO_RECORD_START_FUNCTION = 95;   //自动记录
+  AUTO_POWER_OFF_FUNCTION = 96;   //自动关机
+  AUTO_SLEEP_FUNCTION = 97;//自动休眠
+  AUTO_HOME_PAGE_BACK_FUNCTION = 98;   //自动回到主页
+  SMART_SAVE_FUNCTION = 99;   //智能骑行
+
+  ALARM_SET_SUB_MODULE = 100;   //警示设置
+  ALARM_RIDE_TIME_FUNCTION = 101;   //骑行时间警示
+  ALARM_RIDE_DISTANCE_FUNCTION = 102;   //骑行距离警示
+  ALARM_HRM_FUNCTION = 103;   //心率警示
+  ALARM_CAD_FUNCTION = 104;   //踏频警示
+  ALARM_PWR_FUNCTION = 105;   //功率警示
+  ALARM_CALORIE_FUNCTION = 106;   //卡路里警示
+
+  LAP_SET_SUB_MODULE = 107;   //计圈设置
+
+  SOUND_MODULE = 108;   //声音设置
+  SOUND_KEY_FUNCTION = 109;   //按键音
+  SOUND_BEEP_FUNCTION = 110;   //提示音
+
+  UPLOAD_LOG_MODULE = 111;   //上传日志
+
+  AUTO_RECORD_START_SUPPORT_THRESHOLD = 112; //自动记录 支持阈值设置
+  AUTO_PAUSE_SUPPORT_THRESHOLD = 113; //自动暂停 支持阈值设置
+  AUTO_FUNCTION_SET_SUB_MODULE_520 = 114; //自动功能配置(iGS520专用)
+  reserved 115 to 140;
+
+  WEATHER_TEST_MODULE = 141;   //天气测试
+  reserved 142 to 160;
+
+  ROUTES_MODULE = 161;   //线路规划
+  ROUTE_SUPPORT_DIFFERENCE_ALGORITHM = 162;//支持差分算法
+  ROUTE_SUPPORT_ONLY_SINGLE_ROUTE = 163;//仅支持单线路
+  ROUTE_SUPPORT_AUXILIARY_POINT = 164;//线路支持骑行辅助点
+  reserved 165 to 180;
+
+  BROADCAST_MODULE = 181;   //实时追踪
+  GROUP_TRACK_MODULE = 182;   //团队追踪
+  reserved 183 to 200;
+
+  SENSORS_MODULE = 201;   //传感器模块
+  CRANK_LENGTH_PLUS = 202; //曲柄长度列表增加了 162.5mm 160mm 157.5mm 155mm
+  POWER_CALIBRATION = 203; //功率校准
+  reserved 204 to 220;
+
+  FIRMWARE_DETECTION_MODULE = 221;   //固件检测
+  reserved 222 to 250;
+
+  WIFI_MODULE = 251;   //Wi-Fi
+  reserved 252 to 280;
+
+  PAGE_SETTING_MODULE = 281;   //页面配置
+  PAGE_SETTING_NAME_MAPPING = 282;//页面配置名称映射
+  PAGE_COMPASS = 283;//电子罗盘页面
+  reserved 284 to 310;
+
+  TRAINING_MODULE = 311;   //训练
+  reserved 312 to 340;
+
+  BIKE_SETTING_MODULE = 341;   //自行车设置
+  reserved 342 to 370;
+
+  PERSONAL_SETTINGS_MODULE = 371;   //个人信息设置
+  reserved 372 to 400;
+
+  FONT_DOWNLOAD_MODULE = 401;   //字库下载
+  reserved 402 to 420;
+
+  ANTI_THEFT_ALARM_MODULE = 421;   //防盗报警
+  reserved 422 to 450;
+
+  SEND_WEATHER_INFORMATION_MODULE = 451;   //发送天气信息
+
+  SEND_AGPS_MODULE = 452;   //发送AGPS信息(Online)
+
+  SEND_USER_INFORMATION_MODULE = 453;   //发送用户信息
+
+  SEND_OFFLINE_AGPS_MODULE = 454;   //发送星历信息(Offline)
+  reserved 455 to 500;
+
+  REMOVE_DEVICE_MODULE = 501;   //删除设备
+
+  MODEL_MANAGEMENT_MODULE = 502; //模式管理
+  EDIT_MODEL_MANAGEMENT_MODULE = 503; //模式管理(编辑)
+  reserved 504 to 510;
+
+  THEME_MANAGEMENT_MODULE = 511; //主题管理
+  reserved 512 to 520;
+
+  DISPLAY_SETTING_MODULE = 521; //显示设置
+
+  ALTITUDE_CALIBRATION_MODULE = 522; //高度校准
+  reserved 523 to 530;
+
+  OTHER_SETTING_MODULE = 531; //其他设置
+  CALCULATE_AVERAGE_CADENCE_FILTER_0_VALUE = 532; //计算平均踏频过滤0值
+  CALCULATE_AVERAGE_POWER_FILTER_0_VALUE = 533; //计算平均功率过滤0值
+  MOTION_STATE_DETECTION = 534;//运动状态检测
+  reserved 535 to 540;
+
+  AUTO_START_CUSTOM = 541; //自定义自动开始
+
+  AUTO_START_ALERT = 542; //提示自动开始
+
+  AUTO_PAGE_SLOW = 543; //慢速自动翻页
+
+  AUTO_PAGE_NORMAL = 544; //正常自动翻页
+
+  POWER_SAVING_MODEL = 545; //省电模式
+
+  SMART_POWER_SAVING_FUNCTIONALITY = 546; //智能省电模式
+
+  BLE_MAP_MODULE = 547;//BLE 地图下载模块
+
+  ALARM_SPEED_FUNCTION = 548;   //速度警示
+
+  READ_SN_FUNCTION = 549;   //读取SN功能
+
+  HR_DEVICE = 550;   //心率设备
+
+  SPD_DEVICE = 551;   //速度设备
+
+  CAD_DEVICE = 552;   //踏频设备
+
+  ADVANCED_HR_DEVICE = 553;   //高级心率设备
+
+  RADAR_DEVICE = 554;   //雷达设备
+
+  reserved 555 to 560;
+}
+
+message DeviceInfo{
+  repeated DeviceImage deviceImage = 1;   //设备图片集合
+  string devName = 2;   //设备名
+  string devCustomName = 3;   //设备昵称
+  int32 generation = 4;   //第几代
+  bool isSupportProtoBuf = 5;   //是否支持PB
+  int32 sendFileMtuSize = 6;   //发送文件最大传输单位
+  int32 dataReceiveTimeOut = 7;   //数据接收超时时间
+  repeated FunctionType functionTypeList = 8;   //功能列表
+  string manufacturerSpecificData = 9;   //厂家自定义信息
+  repeated MapManual mapManual = 10;   //使用手册
+  repeated PagingInformation pagingInformation = 11;   //分页信息
+  bool isAccessory = 12;   //是配件吗  （比如：心率、踏频都属于配件设备）
+  int32 ephemerisEffectiveTime = 13;    //星历有效时间(unit: h)
+  int32 deviceMaxActivityFileNum = 14;    //设备最大活动文件数
+  int32 connectionMode = 15; //连接模式  （1：非绑定  2：绑定  3：pin码）
+  int32 androidSupportMinVersion = 16; //android支持该设备最低app版本code
+}
+
+message MapManual {
+  enum ManualType{
+    INVALID = 0;   //后台接入异常预留,不使用
+    UNBIND = 1;
+    CONNECT_HELP = 2;
+  }
+
+  ManualType manualType = 1;
+  string url = 2;
+}
+
+message DeviceImage{
+  enum ImageType{
+    INVALID = 0;   //后台接入异常预留,不使用
+    BIG = 1;   //设备大图
+    SMALL = 2;   //设备小图
+    BACKGROUND_IN_PAGE_SETTING = 3;   //设备背景图(页面配置)
+    DFU = 4;   //DFU菊花图
+    UNBINDING_ANIMATION = 5;//设备解绑动画
+  }
+
+  ImageType imageType = 1;
+  string url = 2;
+}
+
+message PagingInformation{
+  enum Function{
+    INVALID = 0;   //后台接入异常预留,不使用
+    ACTIVITIES = 1;   //活动
+    ROUTES = 2;   //路书
+    WORKOUTS = 3;   //训练
+  }
+
+  Function function = 1;
+  bool isSupportPaging = 2;   //是否支持分页
+}

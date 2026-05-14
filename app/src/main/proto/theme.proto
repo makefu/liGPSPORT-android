@@ -1,0 +1,73 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//操作类型
+enum enum_operate
+{
+	THEME_OP_INVALID = 0;
+	THEME_OP_LIST_GET = 1;
+	THEME_OP_SET = 2;
+	THEME_OP_USE = 3;
+}
+
+enum enum_theme_status
+{
+	THEME_STATUS_UNUSED = 0;
+	THEME_STATUS_USED = 1;
+}
+
+//主页菜单功能
+enum enum_theme_func_key{
+	THEME_FUNC_KEY_INVALID = 0;
+	THEME_FUNC_KEY_RIDE = 1;				//骑行模式
+	THEME_FUNC_KEY_WORKOUT = 2;				//训练功能
+	THEME_FUNC_KEY_NAVI = 3;				//导航功能
+	THEME_FUNC_KEY_THEME = 4;				//主题设置
+	THEME_FUNC_KEY_HISTORY = 5;				//历史记录
+	THEME_FUNC_KEY_SET = 6;					//设置
+	THEME_FUNC_KEY_ROADBOOK = 7;			//电子路书
+	THEME_FUNC_KEY_INS = 8;					//智能通知
+	THEME_FUNC_KEY_SAFETY_TRACK = 9;		//安全与追踪功能
+	THEME_FUNC_KEY_PM = 10;					//省电管理
+	THEME_FUNC_KEY_SENSOR = 11;				//传感器
+	THEME_FUNC_KEY_SYSTEM = 12;				//系统设置
+	THEME_FUNC_KEY_WEATHER = 13;				//天气 
+}
+
+//主题UI样式
+enum enum_theme_uitype{
+	THEME_UITYPE_SIX_GRID = 0;
+	THEME_UITYPE_ROLLER = 1;
+	THEME_UITYPE_SPIN_ROLLER = 2;
+}
+
+//主题列表信息
+message theme_infor_msg{
+	optional uint32 theme_id = 1;
+	optional uint32 theme_index = 2;				//取值0\1\2
+	optional enum_theme_status theme_status = 3;
+	repeated enum_theme_func_key func_key = 4;
+	optional enum_theme_uitype theme_uitype = 5;
+	optional uint32 theme_color = 6;
+}
+
+
+//深色模式
+enum enum_theme_dark_mode
+{
+	THEME_DARK_MODE_DAY = 0;
+	THEME_DARK_MODE_NIGHT = 1;
+	THEME_DARK_MODE_AUTO = 2;
+}
+
+message theme_message{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_THEME];
+	required enum_operate op_code = 2;					//操作码
+	
+	repeated theme_infor_msg theme_info = 3;		
+	
+	optional enum_theme_dark_mode dark_mode = 4;  
+}

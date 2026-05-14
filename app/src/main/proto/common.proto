@@ -1,0 +1,53 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//此文件定义其它proto文件共同包含的消息类型
+
+//服务类型索引号
+enum service_type_index
+{
+	enum_SERVICE_TYPE_INDEX_NONE = 0;			//无效服务索引  
+	enum_SERVICE_TYPE_INDEX_INS = 1;			//智能通知服务
+	enum_SERVICE_TYPE_INDEX_MAP = 2;			//导航地图服务
+	enum_SERVICE_TYPE_INDEX_BACK = 3;			//后台服务
+	enum_SERVICE_TYPE_INDEX_FIRMWARE = 4;			//固件升级服务
+	enum_SERVICE_TYPE_INDEX_WIFI = 5;			//WIFI设置服务
+	enum_SERVICE_TYPE_INDEX_CYCLING_DATA = 6;		//骑行数据上传服务
+	enum_SERVICE_TYPE_INDEX_ROUTE_PLAN = 7;			//线路规划服务
+	enum_SERVICE_TYPE_INDEX_REAL_TIME_TRACE = 8;		//实时追踪服务
+	enum_SERVICE_TYPE_INDEX_USER_CONFIG = 9;		//用户配置
+	enum_SERVICE_TYPE_INDEX_BLE = 10;			//蓝牙
+	enum_SERVICE_TYPE_INDEX_FACTORY = 11;			//工厂配置
+	enum_SERVICE_TYPE_INDEX_CONFIG = 12;			//APP配置
+	enum_SERVICE_TYPE_INDEX_DEV_STATUS = 13;		//设备状态
+	
+	enum_SERVICE_TYPE_INDEX_SENSOR = 14;			//传感器类型
+	
+	enum_SERVICE_TYPE_INDEX_TRAINING = 15;			//训练	
+	enum_SERVICE_TYPE_INDEX_TEAM_INFO = 16;			//队友信息
+	enum_SERVICE_TYPE_INDEX_DEV_VER_INFO = 17;		//设备版本信息
+	enum_SERVICE_TYPE_INDEX_LANGUAGE = 18;			//语言包下载
+	enum_SERVICE_TYPE_INDEX_LOG = 19;				//LOG日志同步
+	enum_SERVICE_TYPE_INDEX_THEME = 20;				//主题样式
+	enum_SERVICE_TYPE_INDEX_FILE_OPERATION = 21;	//文件操作 （文件下发、文件删除）
+	enum_SERVICE_TYPE_INDEX_MAP_NEW = 22;			//地图服务，用于BLE下载地图
+	enum_SERVICE_TYPE_INDEX_ROUTE_BOOK = 23;		//电子路书
+}
+
+//服务操作类型
+enum SERVICE_OPERATE_TYPE {
+    enum_SERVICE_OPERATE_TYPE_NONE = 0;		//无效操作类型
+    enum_SERVICE_OPERATE_TYPE_SET = 1;			
+    enum_SERVICE_OPERATE_TYPE_GET = 2;
+    enum_SERVICE_OPERATE_TYPE_ADD = 3;
+    enum_SERVICE_OPERATE_TYPE_DEL = 4;
+}
+
+//APP获取列表或者列表数量的消息类型
+message file_list_get_message{
+	optional uint32 file_num = 1;									//文件数量
+	optional uint32 file_list_support_num_max = 2;					//码表单帧支持的最大的文件列表数量
+	optional uint32 file_index_start = 3;							//文件列表的起始下标
+	optional uint32 file_index_end = 4;								//文件列表的结束下标
+}

@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+import "peripheral_common.proto";
+//此文件定义设备信息的消息类型
+//*注：该服务类型均采用PBOperateType里的GET操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_INFO_SERVICE
+{
+    PIS_UNSPECIFIED = 0; 
+    PIS_MODEL = 1;         //设备型号
+    PIS_NAME = 2;          //名称
+    PIS_VERSION = 3;       //版本号
+    reserved 4 to 10; 
+    PIS_ID = 11;           //ID
+    reserved 12 to 15;
+    PIS_POWER = 16;        //设备电量
+    PIS_TEMPERATURE = 17;  //设备温度
+    PIS_MEMORY = 18;       //设备内存 
+    reserved 19 to 30;
+    PIS_ALL_INFO = 31;     //所有设备信息
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_INFO_OPERATE
+{
+    PIO_UNSPECIFIED = 0;                      
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//设备型号
+enum PERIPHERAL_INFO_MODEL_TYPE
+{
+    PIM_UNSPECIFIED = 0;
+    PIM_HR70 = 1;        //HR70
+}
+
+//名称
+message peripheral_info_data_name
+{
+    string device_name = 1;       //设备名称
+    string ble_name = 2;          //蓝牙名称
+    string manufacturer_name = 3; //厂商名称
+}
+
+//版本号
+message peripheral_info_data_version
+{
+    uint32 mcu_version = 1;   //MCU版本号
+    uint32 app_version = 2;   //APP版本号
+    uint32 boot_version = 3;  //BOOT版本号
+    uint32 hard_version = 4;  //硬件PCBA版本号
+    uint32 check_version = 5; //硬件ID识别版本号
+}
+
+//ID
+message peripheral_info_data_id
+{
+    uint32 device_id = 1;       //设备的FIT ID
+    uint32 manufacturer_id = 2; //厂商的FIT ID
+}
+
+//设备电量
+message peripheral_info_data_power
+{
+    uint32 vol_cur = 1; //当前电池电压
+    uint32 percent = 2; //电量百分比，单位：0.1%
+}
+
+//设备温度
+message peripheral_info_data_temperature
+{
+    int32 temp_cur = 1;    //当前设备温度
+    int32 temp_max = 2;    //设备温度不能超过的最大值
+}
+
+//设备内存
+message peripheral_info_data_memory
+{
+    uint32 remain_internal_flash = 1;  //剩余内部flash
+    uint32 total_internal_flash = 2;   //总内部flasn
+    uint32 remain_iexternal_flash = 3; //剩余外部flash
+    uint32 total_external_flash = 4;   //总外部flasn
+    uint32 remain_internal_ram = 5;    //剩余内部ram
+    uint32 total_internal_ram = 6;     //总内部ram
+    uint32 remain_external_ram = 7;    //剩余外部ram
+    uint32 total_external_ram = 8;     //总外部ram
+}
+
+//消息综合
+message peripheral_info_message 
+{     
+    PERIPHERAL_INFO_MODEL_TYPE model = 1;      
+    peripheral_info_data_name name = 2;        
+    peripheral_info_data_version version = 3;  
+    reserved 4 to 10; 
+    peripheral_info_data_id id = 11;   
+    reserved 12 to 15;         
+    peripheral_info_data_power power = 16;     
+    peripheral_info_data_temperature temperature = 17;
+    peripheral_info_data_memory memory = 18;   
+}
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_info_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_INFO_SERVICE sub_service_type = 3;
+    PERIPHERAL_INFO_OPERATE sub_operate_type = 4;
+    peripheral_info_message message = 5;
+}

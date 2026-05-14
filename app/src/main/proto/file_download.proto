@@ -1,0 +1,14 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//import "training.proto";
+
+message file_download{
+	required uint32 file_size = 1;//文件大小 （必传）
+	optional uint32 file_type = 2;
+	optional uint32 file_id = 3;
+	optional string file_name = 4;
+//	optional string file_md5 = 5;//用于下发固件
+//	optional training_data_message training_data_msg = 6;
+}

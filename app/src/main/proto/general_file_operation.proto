@@ -1,0 +1,30 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//文件类型枚举
+enum file_operation_type{
+	enum_FILE_TYPE_GENERAL    = 0; //通用文件
+	enum_FILE_TYPE_TRAINING   = 1; //训练
+	enum_FILE_TYPE_ROUTE_PLAN = 2; //线路规划
+	enum_FILE_TYPE_MAP        = 3; //地图
+	enum_FILE_TYPE_THEME      = 4; //主题
+	enum_FILE_TYPE_FIRMWARE   = 5; //固件
+	enum_FILE_TYPE_LANGUAGE   = 6; //语言包
+	enum_FILE_TYPE_AGPS       = 7; //AGPS
+	enum_FILE_TYPE_ROUTE_BOOK = 8; //电子路书
+}
+
+message general_file_operation{
+	required service_type_index service_type = 1 [default = enum_SERVICE_TYPE_INDEX_FILE_OPERATION];
+	required SERVICE_OPERATE_TYPE operate_type = 2 [default = enum_SERVICE_OPERATE_TYPE_NONE];
+	required file_operation_type file_type = 3;//文件类型枚举(必传)
+	required uint32 file_size = 4;//文件大小 （必传）
+	required uint32 file_id = 5;//文件id（必传）
+	optional string file_name = 6;//文件名称（非必传）
+	optional string file_extension = 7;//文件扩展名（非必传）
+	optional string file_md5 = 8;// （非必传）
+
+}

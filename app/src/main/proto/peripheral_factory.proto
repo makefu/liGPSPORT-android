@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+option optimize_for = SPEED;
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "peripheral_common.proto";
+import "peripheral_info.proto";
+import "peripheral_config.proto";
+
+import "peripheral_hr.proto";
+
+//此文件定义工厂信息的消息类型
+//*注：该服务类型均采用PBOperateType里的操作即可
+
+//-------------------------------------设备信息服务类型--------------------------------------
+enum PERIPHERAL_FACTORY_SERVICE
+{
+    FAS_UNSPECIFIED = 0; 
+    FAS_SN = 1;               //SN码
+    FAS_DEVICE_INFO = 2;      //设备信息
+    FAS_DEVICE_OPERATE = 3;   //设备状态
+    FAS_DEVICE_CONFIG = 4;    //设备配置
+    reserved 5 to 20;        
+    FAS_BSP_MEMORY = 21;      //内存相关
+    FAS_BSP_RTC = 22;         //RTC相关
+    FAS_BSP_BATTARY = 23;     //电池相关
+    FAS_BSP_TEMPERATURE = 24; //温度相关
+    FAS_BSP_ACC = 25;         //加速度计
+    reserved 26 to 40;
+    FAS_ALL_FACTORY = 41;     //所有工厂消息
+    FAS_LED_TEST_BUTTON = 42; //LED测试按钮
+    FAS_MOTOR_TEST_BUTTON = 43; //马达测试按钮
+}
+
+//-------------------------------------设备信息操作类型--------------------------------------
+enum PERIPHERAL_FACTORY_OPERATE
+{
+    FAO_UNSPECIFIED = 0;    
+}
+
+//--------------------------------------设备信息数据段---------------------------------------
+//SN
+message peripheral_factory_data_sn
+{    
+    string sn = 1;  //SN码
+}
+
+//设备信息
+message peripheral_factory_data_device_info
+{    
+    PERIPHERAL_INFO_MODEL_TYPE model = 1;     //设备型号
+    peripheral_info_data_name name = 2;       //名称
+    peripheral_info_data_version version = 3; //版本号
+    peripheral_info_data_id id = 4;           //id号
+}
+
+//设备运行状态
+message peripheral_factory_data_device_operate
+{
+    PERIPHERAL_HR_SPORT_MODE_TYPE hr_sport_mode = 1;  //心率运动模式
+}   
+
+//设备配置
+message peripheral_factory_data_device_config
+{
+    peripheral_config_data_shutdown shutdown = 1; //关机配置
+    peripheral_config_data_sleep sleep = 2;       //休眠配置
+}
+
+//MEMORY相关
+message peripheral_factory_data_bsp_memory
+{
+    uint32 remain_internal_flash = 1;  //剩余内部flash
+    uint32 total_internal_flash = 2;   //总内部flasn
+    uint32 remain_iexternal_flash = 3; //剩余外部flash
+    uint32 total_external_flash = 4;   //总外部flasn
+}
+
+//RTC时间相关
+message peripheral_factory_data_bsp_rtc
+{
+    int32 zone = 1;     //时区
+    uint32 rtc = 2;     //RTC时间
+    uint32 sunrise = 3; //日出时间
+    uint32 sunset = 4;  //日落时间
+}
+
+//BATTERY相关
+message peripheral_factory_data_bsp_battery
+{
+    uint32 vol_cur = 1; //当前电池电压
+    uint32 percent = 2; //电量百分比，单位：0.1%
+}
+
+//TEMPERATURE相关
+message peripheral_factory_data_bsp_temperature
+{
+    int32 temp_cur = 1; //当前设备温度
+    int32 temp_max = 2; //设备温度不能超过的最大值
+}
+
+//ACC相关
+message peripheral_factory_data_bsp_acc
+{
+    int32 x_axis_val = 1;   //X轴值
+    int32 y_axis_val = 2;   //Y轴值
+    int32 z_axis_val = 3;   //Z轴值
+}
+
+//消息综合
+message peripheral_factory_message 
+{    
+    peripheral_factory_data_sn sn = 1;
+    peripheral_factory_data_device_info device_info = 2;
+    peripheral_factory_data_device_operate device_operate = 3;
+    peripheral_factory_data_device_config device_config = 4;
+    peripheral_factory_data_bsp_memory bsp_memory = 5;
+    peripheral_factory_data_bsp_rtc bsp_rtc = 6;
+    peripheral_factory_data_bsp_battery bsp_battery = 7;
+    peripheral_factory_data_bsp_temperature bsp_temperature = 8;
+    peripheral_factory_data_bsp_acc bsp_acc = 9;
+} 
+
+//-----------------设备信息格式(服务类型+操作类型+子服务类型+子操作类型+数据段)------------------
+message peripheral_factory_format
+{
+    PERIPHERAL_SERVICE_TYPE service_type = 1;
+    PERIPHERAL_OPERATE_TYPE operate_type = 2;
+    PERIPHERAL_FACTORY_SERVICE sub_service_type = 3;
+    PERIPHERAL_FACTORY_OPERATE sub_operate_type = 4;
+    peripheral_factory_message message = 5;
+}

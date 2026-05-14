@@ -1,0 +1,424 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义APP配置相关消息类型
+
+enum CONFIG_SERVICE_TYPE
+{
+	//与用户相关的配置
+	enum_CONFIG_SERVICE_TYPE_NONE = 0x00;		//无效配置服务类型
+	enum_CONFIG_SERVICE_TYPE_USER = 0x01;		//用户配置
+	enum_CONFIG_SERVICE_TYPE_PAGE = 0x02;		//页面配置
+	enum_CONFIG_SERVICE_TYPE_BIKE = 0x03;		//自行车配置
+	enum_CONFIG_SERVICE_TYPE_UNIT = 0x04;		//单位设置
+	enum_CONFIG_SERVICE_TYPE_LANG = 0x05;		//语言设置
+	enum_CONFIG_SERVICE_TYPE_KEY = 0x06;		//按键功能设置
+	enum_CONFIG_SERVICE_TYPE_WHEEL = 0x07;		//轮径设置
+
+	//与设备相关的配置
+	enum_CONFIG_SERVICE_TYPE_GPS  = 0x10;		//GPS配置
+	enum_CONFIG_SERVICE_TYPE_SOUND = 0x11;		//声音配置
+	enum_CONFIG_SERVICE_TYPE_POWER = 0x12;		//休眠、关机
+	enum_CONFIG_SERVICE_TYPE_DIS_COLOR = 0x13;	//颜色显示
+	enum_CONFIG_SERVICE_TYPE_BK = 0x14;			//背光设置
+
+	//与功能相关的配置
+	enum_CONFIG_SERVICE_TYPE_ALARM = 0x30;		//警示提醒
+	enum_CONFIG_SERVICE_TYPE_LAP = 0x31;		//计圈设置
+	enum_CONFIG_SERVICE_TYPE_AUTO = 0x32;		//自动配置类功能
+	enum_CONFIG_SERVICE_TYPE_MODE = 0x33;		//模式配置
+	enum_CONFIG_SERVICE_TYPE_ALTITUDE = 0x34;	//海拔设置
+	enum_CONFIG_SERVICE_TYPE_DATA = 0x35;		//码表数据机制设置
+}
+
+//APP配置操作类型
+enum CONFIG_OPERATE_TYPE
+{
+	enum_CONFIG_OPERATE_TYPE_NONE = 0;			//无效操作类型
+
+	enum_CONFIG_OPERATE_TYPE_SET = 1;
+	enum_CONFIG_OPERATE_TYPE_GET = 2;
+	enum_CONFIG_OPERATE_TYPE_SEND = 3;
+	enum_CONFIG_OPERATE_TYPE_ADD = 4;
+	enum_CONFIG_OPERATE_TYPE_DEL = 5;
+
+	enum_CONFIG_OPERATE_TYPE_GET_MODULE_INFO = 6;	//获取模块信息，如果是页面配置，则返回不支持的数据项信息
+	enum_CONFIG_OPERATE_TYPE_CTRL = 7;				//控制命令，如页面开启自动返回主页
+}
+
+//--------------------------------声音功能设置-----------------------------------//
+enum SOUND_TYPE
+{
+	enum_SOUND_TYPE_INVALID = 0x00;		//无效的声音类型
+	enum_SOUND_RECORD_START = 0x01;		//启动记录
+	enum_SOUND_RECORD_PAUSE = 0x02;		//暂停记录
+	enum_SOUND_RECORD_SAVE = 0x04;		//记录保存
+	enum_SOUND_LAP = 0x08;			//计圈
+	enum_SOUND_ALART = 0x10;		//警示提示
+	enum_SOUND_KEY = 0x20;			//按键音
+	enum_SOUND_USB = 0x40;			//USB
+	enum_SOUND_GPS = 0x80;			//GPS
+	enum_SOUND_SENSOR = 0x100;		//传感器
+	enum_SOUND_CALL = 0x200;		//来电
+	enum_SOUND_SOCIAL = 0x400;		//短信
+	enum_SOUND_BURGLAR_ALARM = 0x800;	//防盗提示
+	enum_SOUND_DEV_FIND = 0x1000;		//找回设备
+}
+
+enum SOUND_SCENE_TYPE
+{
+	enum_SOUND_SCENE_TYPE_INVALID = 0;
+	enum_ALL_SCENE = 1;					//所有场景
+	enum_RECORDING_SCENE = 2;			//记录场景
+}
+
+message sound_set_msg
+{
+	optional uint32 sound_type = 1;
+	optional SOUND_SCENE_TYPE sound_scene = 2;
+	optional uint32 status = 3;			//0--关  1--开
+}
+
+//--------------------------------按键功能设置-----------------------------------//
+enum KEY_TYPE
+{
+	enum_KEY_TYPE_INVALID = 0;			//无效类型
+	enum_KEY1 = 1;
+	enum_KEY2 = 2;
+	enum_KEY3 = 3;
+	enum_KEY4 = 4;
+	enum_KEY5 = 5;
+	enum_KEY6 = 6;
+}
+
+enum KEY_FUNCTION_TYPE
+{
+	enum_KEY_FUNCTION_TYPE_INVALID = 0;			//无效类型
+	enum_RECORD_STATUS_MANUAL_PAUSE = 1;		//记录状态下手动暂停
+	enum_RECORD_STATUS_MANUAL_LAP = 2;			//记录状态下手动计圈
+}
+
+message key_set_msg
+{
+	optional KEY_TYPE key_type = 1;
+	optional KEY_FUNCTION_TYPE key_function_type = 2;
+}
+
+//--------------------------------自动配置类功能设置-----------------------------//
+enum AUTO_TYPE
+{
+	enum_AUTO_TYPE_INVALID = 0;	//无效类型
+	enum_PAUSE = 1;				//自动暂停
+	enum_RECORD_START = 2;		//自动记录
+	enum_POWER_OFF = 3;			//自动关机
+	enum_SLEEP = 4;				//自动休眠
+	enum_HOME_PAGE_BACK = 5;	//自动回到主页
+	enum_SMART_SAVE = 6;		//智能骑行
+	enum_POWER_SAVE = 7;		//省电模式
+	enum_PAGE_AUTO = 8;			//自动翻页
+	enum_MOTION_CHECK = 9;			//运动检测
+}
+
+//赋值给auto_set_msg消息中status成员
+enum POWER_SAVE_STATUS
+{
+	POWER_SAVE_STATUS_OFF = 0;		//关闭省电模式
+	POWER_SAVE_STATUS_ON = 1;		//开启省电模式
+	POWER_SAVE_STATUS_SMART = 2;	//智能省电模式
+}
+
+//自动翻页功能
+enum PAGE_AUTO_STATUS
+{
+	PAGE_AUTO_STATUS_OFF = 0;		//关闭自动翻页
+	PAGE_AUTO_STATUS_ON = 1;		//开启自动翻页
+	PAGE_AUTO_STATUS_FAST = 2;		//快速自动翻页
+	PAGE_AUTO_STATUS_SLOW = 3;		//慢速自动翻页
+	PAGE_AUTO_STATUS_MAIN = 4;		//自动返回主页
+}
+
+message auto_set_msg
+{
+	optional AUTO_TYPE auto_type = 1;
+	optional uint32 status = 2;
+	optional uint32 param1 = 3;
+}
+
+//--------------------------------警示设置---------------------------------------//
+//警示类型
+enum ALARM_TYPE
+{
+	ALARM_TYPE_INVALID = 0;
+	ALARM_TYPE_RIDE_TIME = 1;			//骑行时间警示
+	ALARM_TYPE_RIDE_DISTANCE = 2;		//骑行距离警示
+	ALARM_TYPE_HRM = 3;					//心率警示
+	ALARM_TYPE_CAD = 4;					//踏频警示
+	ALARM_TYPE_PWR = 5;					//功率警示
+	ALARM_TYPE_CALORIE = 6;				//卡路里警示
+	ALARM_TYPE_SPEED = 7;				//速度警示
+}
+
+//警示设置参数
+message alarm_params_set_msg{
+	required ALARM_TYPE alarm_type = 1;
+	optional uint32 value_max = 2;		//骑行时间、距离、卡路里在此设置，单位 时间：s 距离：m 卡路里：kcal 心率：bpm 踏频：rpm 速度：mm/s 功率：w
+	optional uint32 value_min = 3;
+	required uint32 status = 4;			//开启状态 1---开启 0---关闭
+}
+
+//警示设置消息
+message alarm_msg
+{
+	repeated alarm_params_set_msg set_msg = 1;
+	optional uint32 alarm_interval_time = 2;	//提示间隔时间，单位s
+}
+
+//--------------------------------计圈设置---------------------------------------//
+enum LAP_TYPE
+{
+	LAP_TYPE_INVALID = 0;
+	LAP_TYPE_LOCATION = 1;		//位置计圈
+	LAP_TYPE_TIME = 2;			//时间计圈
+	LAP_TYPE_DISTANCE = 3;		//距离计圈
+}
+
+message lap_msg
+{
+	required LAP_TYPE lap_type = 1;
+	optional uint32 value = 2;			//时间：s 距离：m，手动及位置计圈不带此项数据
+	optional uint32 status = 3;			//开启自动计圈，状态 1---开启 0---关闭
+}
+
+//--------------------------------单位设置---------------------------------------//
+//单位类型
+enum UNIT_TYPE
+{
+	enum_UNIT_TYPE_INVALID = 0;
+	enum_UNIT_TYPE_METRIC = 1;			//摄氏、千克、公制
+	enum_UNIT_TYPE_INCH = 2;			//华氏、磅、英制
+}
+
+//单位设置的项
+enum UNIT_ITEM
+{
+	enum_UNIT_ITEM_INVALID = 0;
+	enum_UNIT_ITEM_DISTANCE = 1;			//距离
+	enum_UNIT_ITEM_ELEVATION = 2;			//高度
+	enum_UNIT_ITEM_WEIGHT = 3;			//重量
+	enum_UNIT_ITEM_TEMPERATURE = 4;			//温度
+}
+
+message unit_msg{
+	optional UNIT_ITEM unit_item = 1;
+	optional UNIT_TYPE unit_type = 2;
+}
+
+
+//--------------------------------用户设置---------------------------------------//
+//区间配置数据消息类型
+message section_data_msg{
+	repeated uint32 hrm = 1;				//6个数据 如20 60 150 170 190 220，则表示5个区间 20-60 60-150 150-170 170-190 190-220，最大心率220
+	repeated uint32 cad = 2;				//7个数据
+	repeated uint32 spd = 3;				//6个数据
+	reserved 4 to 9;
+
+	optional uint32 FTP = 10;
+	repeated uint32 power = 11;				//8个数据 如0 110 150 180 211 241 352 2000，
+	reserved 12 to 19;
+}
+
+//用户配置数据段消息类型
+message user_data_msg{
+	optional uint32 sex = 1;				//1表示男性 0表示女性
+	optional uint32 weight = 2;				//体重,单位 100g
+	optional uint32 age = 3;				//年龄
+	optional uint32 height = 4;				//身高,单位cm
+	reserved 5 to 6;
+	optional int32 time_zone = 7;			//时区，单位 s
+	optional string member_id = 8;			//用户ID，最大长度定义为40个字节
+	optional uint32 update_status = 9;		//码表更新的状态 1表示码表有更新
+	reserved 10 to 19;
+
+	optional section_data_msg section_data = 20;		//区间配置
+}
+
+/**************模式设置**************/
+message mode_msg
+{
+	optional uint32 mode_index = 1;	//模式编号
+    optional uint32 mode_color = 2; //模式颜色
+    optional uint32 valid = 3; //该配置是否可用:删除配置就变为不可用;不可用则不显示
+    optional uint32 inuse = 4; //该配置项是否正在使用:正在使用则前方有选中符号
+    optional uint32 template_index = 5;		//自定义创建时依据的默认模式模板序号
+    optional string mode_name = 6;           //存储的名字
+}
+
+//--------------------------------页面设置---------------------------------------//
+//页面类型
+enum PAGE_TYPE
+{
+	enum_PAGE_TYPE_INVALID = 0;
+	enum_PAGE_TYPE_DATA = 1;			//数据页
+	enum_PAGE_TYPE_ELEVATION = 2;		//高度页
+	enum_PAGE_TYPE_MAP = 3;				//地图页
+	enum_PAGE_TYPE_AREA = 4;			//区间页
+	enum_PAGE_TYPE_TRAINING_COURSE = 5; //训练页
+	enum_PAGE_TYPE_TRAINING_FEC = 6;	//训练FEC页
+	enum_PAGE_TYPE_COMPASS = 7;			//电子罗盘
+	enum_PAGE_TYPE_LAP = 8;				//计圈
+	enum_PAGE_TYPE_ROADBOOK = 9;		//电子路书
+	enum_PAGE_TYPE_CLIMB = 10;			//坡程页
+	enum_PAGE_TYPE_AIPARTNER = 11;		//虚拟伙伴
+}
+
+//页面配置消息类型
+message page_msg{
+	optional uint32 page_index = 1;				//页面编号
+												//iGS630:1-5表示页面1-5   7-14表示图表 15表示仪表盘
+												//iGS620:1-5表示页面1-5   6表示高度页面  7表示地图页面 8表示区间页面
+												//iGS520:共6页 3个数据页 + 高度页面 + 地图页面 + 训练页面，训练页面位于最后一页，不参与排序，前5页可以参与排序；此index用于排序及设置对应页面
+	optional uint32 status = 2;					//页面状态 1表示开 0表示关
+	repeated uint32 data = 3;					//页面数据 对应码表从左至右从上至下 1-5页面1-10项数据 高度页面1-4项数据  地图页面0-2项数据  区间页面无数据
+	optional uint32 data_site = 4;				//数据位置，高度页面存在此配置 1--码表上方 0 码表下方
+	optional string page_name = 5;				//页面名称 不超过10个字符，只支持数字、字母和空格
+	optional PAGE_TYPE page_type = 6;
+	optional uint32 page_mode = 7;				//从低位到高位 每3bit表示一行的数据项，即低3bit表示码表最上面一行显示的数据项个数
+	optional uint32 main_page_status = 8;	    // 1表示当前页面是主页
+	optional uint32 line_width = 9;				//从低位到高位 每3bit表示一行宽度，即低3bit表示码表最上面一行的宽度，取值为0\1\2\3，每一页总宽度为6，宽度为0的行，是剩余宽度取平均
+	optional uint32 graphic_display = 10;		//从低位到高位，每一位（data对应）表示项数据是否开启图表显示，1表示开启 0表示关闭
+}
+
+enum LCD_TYPE{
+	INVALID = 0;
+	PIXEL_LCD = 1;							//点阵屏
+	SECTION_LCD = 2;						//段码屏
+}
+
+message cur_page_status_msg{
+	optional uint32 page_line_num_max = 1;		//支持的最大行数
+	optional uint32 page_line_data_max = 2;		//一行支持的最大数据数量
+	optional uint32 data_page_num_max = 3;		//支持的最大数据页
+	repeated uint32 unsupport_data = 4;			//不支持的数据类型
+	optional LCD_TYPE lcd_type = 5;				//屏的类型
+	repeated uint32 support_page_layout = 6;	//支持的页面布局
+	reserved 7 to 10;
+	optional uint32 main_page_open = 11;		// 1表示开启自动返回主页功能，0表示关闭自动返回主页功能
+}
+
+//--------------------------------自行车设置---------------------------------------//
+//自行车配置消息类型
+message bike_msg{
+	optional uint32 bike_index = 1;				//自行车编号
+	optional string bike_name = 2;				//自行车名称
+	optional uint32 bike_weigth = 3;			//车重 单位100g
+	optional uint32 wheel_dia = 4;				//轮径  mm
+	optional uint64 odometer = 5;				//总里程
+	optional uint32 auto_dia = 6;				//自动轮径 1表示开启 0表示关闭
+	optional uint32 bike_status = 7;			//自行车使用状态 1使用 0不使用
+}
+
+
+//--------------------------------语言设置---------------------------------------//
+enum LANGUAGE_TYPE
+{
+	enum_LANGUAGE_TYPE_INVALID = 0;
+	enum_LANGUAGE_TYPE_ENGLISH = 1;					//英语
+	enum_LANGUAGE_TYPE_SPANISH = 2;					//西班牙语
+	enum_LANGUAGE_TYPE_FRENCH = 3;					//法语
+	enum_LANGUAGE_TYPE_GERMAN = 4;					//德语
+	enum_LANGUAGE_TYPE_JAPANESE = 5;				//日语
+	enum_LANGUAGE_TYPE_ITALIAN = 6;					//意大利语
+	enum_LANGUAGE_TYPE_PORTUGUESE = 7;				//葡萄牙语
+	enum_LANGUAGE_TYPE_KOREAN = 8;					//韩语
+	enum_LANGUAGE_TYPE_CHINESE = 9;					//简体中文
+	enum_LANGUAGE_TYPE_TAIWANESE = 10;				//繁体中文
+	enum_LANGUAGE_TYPE_POLISH = 11;					//波兰语
+	enum_LANGUAGE_TYPE_CROATIAN = 12;				//克罗地亚语
+	enum_LANGUAGE_TYPE_CZECH = 13;					//捷克语
+	enum_LANGUAGE_TYPE_DANISH = 14;					//丹麦语
+	enum_LANGUAGE_TYPE_DUTCH = 15;					//荷兰语
+	enum_LANGUAGE_TYPE_FINNISH = 16;				//芬兰语
+	enum_LANGUAGE_TYPE_GREEK = 17;					//希腊语
+	enum_LANGUAGE_TYPE_HUNGARIAN = 18;				//匈牙利语
+	enum_LANGUAGE_TYPE_NORWEGIAN = 19;				//挪威语
+	enum_LANGUAGE_TYPE_SLOVAKIAN = 20;				//斯洛伐克语
+	enum_LANGUAGE_TYPE_SLOVENIAN = 21;				//斯洛维尼亚语
+	enum_LANGUAGE_TYPE_SWEDISH = 22;				//瑞典语
+	enum_LANGUAGE_TYPE_RUSSIAN = 23;				//俄语
+	enum_LANGUAGE_TYPE_TURKISH = 24;				//土耳其语
+	enum_LANGUAGE_TYPE_LATVIAN = 25;				//拉脱维亚语
+	enum_LANGUAGE_TYPE_UKRAINIAN = 26;				//乌克兰语
+	enum_LANGUAGE_TYPE_ARABIC = 27;					//阿拉伯语
+	enum_LANGUAGE_TYPE_FARSI = 28;					//波斯语
+	enum_LANGUAGE_TYPE_BULGARIAN = 29;				//保加利亚语
+	enum_LANGUAGE_TYPE_ROMANIAN	= 30;				//罗马尼亚语
+	enum_LANGUAGE_TYPE_THAI = 31;					//泰语
+	enum_LANGUAGE_TYPE_HEBREW = 32;					//希伯来语
+	enum_LANGUAGE_TYPE_BRAZILIAN_PORTUGUESE = 33;	//巴西葡萄牙语
+	enum_LANGUAGE_TYPE_INDONESIAN = 34;				//印度尼西亚语
+	enum_LANGUAGE_TYPE_MALAYSIAN = 35;				//马来西亚语
+	enum_LANGUAGE_TYPE_VIETNAMESE = 36;				//越南语
+	enum_LANGUAGE_TYPE_BURMESE = 37;	 			//缅甸语
+	enum_LANGUAGE_TYPE_MONGOLIAN = 38;				//蒙古语
+	enum_LANGUAGE_TYPE_ALL = 100;					//所有语种
+	enum_LANGUAGE_TYPE_CUSTOM = 254;				//自定义语言
+}
+
+message language_msg{
+	required LANGUAGE_TYPE cur_language = 1;		//设备当前的语言
+	repeated LANGUAGE_TYPE supported_language = 2;		//设备支持的语言
+}
+
+
+//--------------------------------背光设置---------------------------------------//
+message backlight_msg{
+	optional uint32 backlight_night_on = 1;			//夜晚背光常亮 1表示开 0表示关
+	optional uint32 backling_time = 2;				//背光时间 单位s 0xFFFFFFFF表示常亮
+	optional uint32 backlight_auto = 3;				//自动背光 1表示开 0表示关
+	optional uint32 backlight_day_percent = 4;  	//白天背光亮度百分比
+	optional uint32 backlight_night_percent = 5;  	//夜晚背光亮度百分比
+}
+
+//--------------------------------数据机制设置---------------------------------------//
+enum DATA_TYPE
+{
+	enum_DATA_TYPE_INVALID = 0x00;
+	enum_DATA_TYPE_PWR_WITH_ZERO = 0x01;	//与status配合 功率零值平均 1默认值 0:不含零值  1:含0值
+	enum_DATA_TYPE_CAD_WITH_ZERO = 0x02;	//与status配合 踏频零值平均 1默认值 0:不含零值  1:含0值
+}
+
+message data_msg{
+	optional DATA_TYPE data_type = 1[default = enum_DATA_TYPE_INVALID];
+	optional uint32 status = 2;
+}
+
+message config_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_CONFIG];
+	required CONFIG_SERVICE_TYPE config_sevice_type = 2[default = enum_CONFIG_SERVICE_TYPE_NONE];
+	required CONFIG_OPERATE_TYPE config_operate_type = 3[default = enum_CONFIG_OPERATE_TYPE_NONE];
+
+	optional user_data_msg user_data_message = 4;
+	repeated page_msg page_message = 5;
+	repeated bike_msg bike_message = 6;
+	repeated unit_msg unit_message = 7;			//公英制设置
+	optional cur_page_status_msg page_status_message = 8;
+	optional uint32 altitude = 9;				//海拔 单位cm
+	reserved 10 to 11;
+	optional language_msg language_message = 12;		//语言设置
+	optional backlight_msg backlight_message = 13;		//背光设置
+	reserved 14 to 18;
+
+	optional uint32 cur_operate_mode = 19;
+	repeated mode_msg mode_message = 20;
+	repeated alarm_msg alarm_message = 21;			//警示提醒设置
+	repeated lap_msg lap_message = 22;				//计圈设置
+	repeated auto_set_msg auto_set_message = 23;	//自动功能配置
+	repeated key_set_msg key_set_message = 24;			//按键功能配置
+	repeated sound_set_msg sound_set_message = 25;		//声音配置
+	repeated data_msg data_message = 26;				//数据机制设置
+}
+
+

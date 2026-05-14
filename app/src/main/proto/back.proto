@@ -1,0 +1,113 @@
+syntax = "proto2";
+
+import "common.proto";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//此文件定义后台服务相关的消息类型
+
+//后台服务类型
+enum BACK_SERVICE_TYPE
+{
+	enum_BACK_SERVICE_TYPE_NONE = 0;		//无效后台服务类型
+	enum_BACK_SERVICE_TYPE_MAIN = 1;		//后台服务
+	enum_BACK_SERVICE_TYPE_WEATHER = 2;		//天气服务
+	enum_BACK_SERVICE_TYPE_AIR_PRESSURE = 3;	//气压服务
+	enum_BACK_SERVICE_TYPE_ELEVATION = 4;		//海拔服务
+	enum_BACK_SERVICE_TYPE_EPHEMERIS = 5;		//星历服务
+}
+
+//后台服务操作类型
+enum BACK_OPERATE_TYPE
+{
+	enum_BACK_OPERATE_TYPE_NONE = 0;		//无效操作类型
+	enum_BACK_OPERATE_TYPE_GET = 1;			//码表获取后台服务数据
+	enum_BACK_OPERATE_TYPE_SEND = 2;		//APP发送后台服务数据
+}
+
+//-------------------------数据段定义----------------------------------------//
+
+//未来三天天气
+message weather_three_days_data_message
+{
+	optional uint32 weather_index = 1;		//天气
+	optional int32 max_temp = 2;			//最高温度
+	optional int32 min_temp = 3;			//最低温度
+	optional uint32 rain_prob = 4;			//降雨概率  
+	optional string date = 5;			//日期
+}
+
+//当前天气
+message weather_current_data_message
+{
+	optional uint32 cur_temperature = 1;		//当前温度
+	optional uint32 cur_weather = 2;		//当前天气
+	optional int32 cur_day_max_temp = 3;		//当天最大温度
+	optional int32 cur_day_min_temp = 4;		//当天最低温度
+	optional string time = 5;			//时间
+	optional string wind_deg = 6;			//风向360度角度
+	optional string wind_spd = 7;			//风速
+}
+
+//隔三小时天气
+message weather_three_hour_data_memsage
+{
+	optional uint32 wather_index = 1;		//天气
+	optional int32 temp = 2;			//温度
+	optional uint32 rain_prob = 3;			//降雨概率
+	optional string time = 4;			//时间
+	optional string wind_deg = 5;			//风向360度角度
+	optional string wind_spd = 6;			//风速	
+}
+
+//气压消息类型
+message air_pressure_data_message
+{
+	optional uint32 air_pressure = 1;
+}
+
+//全球卫星定位系统类型
+enum GPS_TYPE
+{
+	enum_GPS_TYPE_INVALID = 0;
+	enum_GPS_TYPE_GPS = 1;
+	enum_GPS_TYPE_BD = 2;
+	enum_GPS_TYPE_GLONASS = 3;
+	enum_GPS_TYPE_GALILEO = 4;
+}
+
+//AGPS信息类型 online\ano offline\alm offline
+enum AGPS_TYPE
+{
+	enum_AGPS_FILE_TYPE_INVALID = 0;
+	enum_AGPS_FILE_TYPE_ONLINE = 1;
+	enum_AGPS_FILE_TYPE_ANO_OFFLINE = 2;
+	enum_AGPS_FILE_TYPE_ALM_OFFLINE = 3;
+}
+
+//星历信息
+message ephemeris_data_message
+{
+	optional string file_name = 1;			//AGPS文件名,如online_20190904.ubx offline_ano_20190904.ubx offline_alm_20190904.ubx(年历)，此命令后期可以作废，由码表自己根据类型等信息定义文件名
+	optional bytes contents = 2; 			//文件内容
+	optional GPS_TYPE gps_type = 3[default = enum_GPS_TYPE_INVALID];
+	optional AGPS_TYPE agps_type = 4[default = enum_AGPS_FILE_TYPE_INVALID];
+	optional uint32 time = 5;				//信息UTC时间
+}
+
+//后台服务消息类型
+//消息格式：服务类型 + 后台服务类型 + 操作类型 + 数据段
+message back_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_BACK];
+	required BACK_SERVICE_TYPE back_service_type = 2[default = enum_BACK_SERVICE_TYPE_NONE];
+	required BACK_OPERATE_TYPE back_operate_type = 3[default = enum_BACK_OPERATE_TYPE_NONE];
+
+	repeated weather_three_days_data_message three_days_msg = 4;
+	optional weather_current_data_message cur_msg = 5;
+	repeated weather_three_hour_data_memsage three_hours_msg = 6;
+
+	optional air_pressure_data_message air_pressure_msg = 7;
+	optional ephemeris_data_message ephemeris_data_msg = 8;				 
+}
+
+

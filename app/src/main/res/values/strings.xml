@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ligpsport</string>
+    <string name="upload_to_igpsport">Upload to iGPSPORT</string>
+</resources>

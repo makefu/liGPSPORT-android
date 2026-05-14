@@ -1,0 +1,42 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义WIFI设置服务相关的消息类型
+
+//WIFI设置服务操作类型
+enum WIFI_OPERATE_TYPE
+{ 
+	enum_WIFI_OPERATE_TYPE_NONE = 0;		//无效操作类型
+	enum_WIFI_OPERATE_TYPE_STATUS_GET = 1;		//APP获取WIFI连接状态
+	enum_WIFI_OPERATE_TYPE_STATUS_SEND = 2;		//发送WIFI连接状态（码表->APP）
+	enum_WIFI_OPERATE_TYPE_CTRL = 3;		//WIFI开启/关闭控制命令
+	enum_WIFI_OPERATE_TYPE_LIST_GET = 4;		//APP获取WIFI列表命令
+	enum_WIFI_OPERATE_TYPE_LIST_SEND = 5;		//码表返回WIFI列表
+	enum_WIFI_OPERATE_TYPE_ASSIGN_SSID = 6;		//连接指定WIFI
+	enum_WIFI_OPERATE_TYPE_AUTO_STATUS_GET = 7;	//获取WIFI自动上传数据状态
+	enum_WIFI_OPERATE_TYPE_AUTO_STATUS_SEND = 8;	//发送WIFI自动上传数据状态（APP->码表 码表->APP）
+}
+
+//WIFI设置数据段
+message wifi_data_message
+{
+	optional uint32 status = 1;			//开启/关闭状态 1---表示关  2表示开
+	optional string ssid = 2;			//WIFI SSID
+	optional string key = 3;			//WIFI KEY 
+	optional uint32 open_status = 4;		//WIFI开放状态
+	optional uint32 signal_strength = 5;		//WIFI信号强度	
+}
+
+//WIFI设置服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message wifi_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_WIFI];
+	required WIFI_OPERATE_TYPE wifi_operate_type = 2[default = enum_WIFI_OPERATE_TYPE_NONE];
+
+	repeated wifi_data_message wifi_data_msg = 3;
+}
+
+

@@ -1,0 +1,43 @@
+syntax = "proto2";
+
+import "common.proto";
+
+option java_package = "com.igpsport.blelib.bean";
+
+//此文件定义队友信息服务相关消息类型
+
+//队友信息操作类型
+enum TEAM_INFO_OPERATE_TYPE
+{
+	enum_TEAM_INFO_OPERATE_TYPE_NONE = 0;			//无效操作类型
+	enum_TEAM_INFO_OPERATE_TYPE_SET = 1;			//发送/设置队友信息
+}
+
+enum MEMBER_STATE_TYPE
+{
+	enum_MEMBER_STATE_TYPE_INVALID = 0;				//无效状态
+	enum_MEMBER_STATE_TYPE_NORMAL  = 1;				//正常状态
+	enum_MEMBER_STATE_TYPE_ABNORMAL = 2;			//异常状态，如长时间无速度，偏航过多等
+	enum_MEMBER_STATE_TYPE_OFFLINE = 3;				//离线状态
+	enum_MEMBER_STATE_TYPE_JOIN = 4;				//加入团队
+	enum_MEMBER_STATE_TYPE_QUIT	= 5;				//退出团队
+}
+
+//队友信息服务数据段消息类型
+message team_info_data_msg{
+	optional double latitude = 1;				//纬度
+	optional double longitude = 2;				//经度
+	optional uint32 status = 3;					//赋值为MEMBER_STATE_TYPE
+	optional string nick_name = 4;				//用户昵称，APP最长15个字符，码表端用于显示的只存4个字节多余长度截取，加入/退出团队弹窗时使用最长字符
+	optional int32  course = 5;					//航向
+}
+
+message team_info_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_TEAM_INFO];
+	required TEAM_INFO_OPERATE_TYPE team_info_operate_type = 2[default = enum_TEAM_INFO_OPERATE_TYPE_NONE];
+
+	optional uint32 member_num = 3;
+	repeated team_info_data_msg team_info_data_message = 4;
+}
+
+

@@ -1,0 +1,33 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义实时追踪服务相关的消息类型
+
+//实时追踪服务操作类型
+enum REAL_TIME_TRACE_OPERATE_TYPE {
+    enum_REAL_TIME_TRACE_OPERATE_TYPE_NONE = 0;		//无效操作类型
+    enum_REAL_TIME_TRACE_OPERATE_TYPE_GET = 1;		//获取实时追踪
+    enum_REAL_TIME_TRACE_OPERATE_TYPE_FIT = 2;		//实时追踪fit文件上传
+    enum_REAL_TIME_TRACE_OPERATE_TYPE_FINISH = 3;	//实时数据当前所有数据传输完成
+    enum_REAL_TIME_TRACE_OPERATE_TYPE_END = 4 ;		//骑行结束命令
+}
+
+//fit文件消息类型
+message real_time_trace_fit_message {
+    optional uint32 timestamp = 1; //时间戳
+    optional bytes fit_content = 2; //fit文件内容
+}
+
+//实时追踪服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message real_time_trace_msg {
+    required service_type_index service_type = 1 [default = enum_SERVICE_TYPE_INDEX_REAL_TIME_TRACE];
+    required REAL_TIME_TRACE_OPERATE_TYPE real_time_trace_operate_type = 2 [default = enum_REAL_TIME_TRACE_OPERATE_TYPE_NONE];
+
+    optional real_time_trace_fit_message real_time_trace_fit_msg = 3;
+}
+
+

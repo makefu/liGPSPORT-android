@@ -1,0 +1,124 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义传感器设置相关的消息类型
+
+//传感器设置操作类型
+enum SENSOR_OPERATE_TYPE
+{ 
+	enum_SENSOR_OPERATE_TYPE_NONE = 0;		
+	enum_SENSOR_OPERATE_TYPE_GET = 1;	//获取传感器信息
+	enum_SENSOR_OPERATE_TYPE_SET = 2;	//设置传感器
+	enum_SENSOR_OPERATE_TYPE_DEL = 3;	//忽略传感器
+	enum_SENSOR_OPERATE_TYPE_CONNECT = 4;	//连接传感器
+	enum_SENSOR_OPERATE_TYPE_SEND = 5;	//发送传感器信息
+	enum_SENSOR_OPERATE_TYPE_EXIT = 6;	//退出传感器设置界面
+
+	enum_SENSOR_OPERATE_TYPE_POW_CALIB = 7;	//功率校准
+}
+
+//传感器类型
+enum SENSOR_TYPE
+{
+	enum_SENSOR_TYPE_INVALID = 0;		//无效传感器类型
+	enum_SENSOR_TYPE_HRM = 1;		//心率传感器
+	enum_SENSOR_TYPE_CBSC = 2;		//速度踏频二合一
+	enum_SENSOR_TYPE_PEDAL_BPWR = 3;	//脚踏功率计
+	enum_SENSOR_TYPE_OTHER_BPWR = 4;	//非脚踏功率计
+	enum_SENSOR_TYPE_CAD = 5;		//踏频传感器
+	enum_SENSOR_TYPE_SPD = 6;		//速度传感器
+	enum_SENSOR_TYPE_SHFT = 7;		//标准ANT协议电变
+	enum_SENSOR_TYPE_DI2 = 8;		//DI2电变
+	enum_SENSOR_TYPE_FEC = 9;		//FEC
+	enum_SENSOR_TYPE_LEV = 10;		//LEV
+	enum_SENSOR_TYPE_RD = 11;		//跑步动态
+	enum_SENSOR_TYPE_RADAR = 12;	//雷达
+	enum_SENSOR_TYPE_LIGHT= 13;		//车灯
+}
+
+//传感器无线类型ANT、BLE
+enum SENSOR_RADIO_TYPE
+{
+	enum_SENSOR_RADIO_TYPE_INVALID = 0;
+	enum_SENSOR_RADIO_TYPE_BLE = 1;		//BLE
+	enum_SENSOR_RADIO_TYPE_ANT = 2;		//ANT	
+}
+
+//传感器状态类型
+enum SENSOR_STATUS_TYPE
+{
+	enum_SENSOR_STATUS_TYPE_SAVED = 0;	//已保存
+	enum_SENSOR_STATUS_TYPE_CONNECTED = 1;	//已连接
+	enum_SENSOR_STATUS_TYPE_NO_SAVED = 2;	//未保存
+}
+
+message radar_sensor_set_message
+{
+	optional uint32 alert_bar_side = 1;			//0-左侧  1-右侧
+	optional uint32 alert_sound_open = 2;		//0-关闭  1-开启
+}
+
+enum DI2_CHN_NUM
+{
+	enum_DI2_CHN_NUM_0 = 0;
+	enum_DI2_CHN_NUM_1 = 1;
+	enum_DI2_CHN_NUM_2 = 2;
+	enum_DI2_CHN_NUM_3 = 3;
+}
+
+enum DI2_BUTTON_OP_TYPE
+{
+	enum_DI2_BUTTON_OP_TYPE_LONG = 0;
+	enum_DI2_BUTTON_OP_TYPE_SINGLE = 1;
+	enum_DI2_BUTTON_OP_TYPE_DOUBLE = 2;		
+}
+
+enum DI2_FUNC_TYPE
+{
+	// 参照 di2_config_func_t
+	enum_DI2_FUNC_INVALID = 0x00;
+	enum_DI2_FUNC_PAGE_UP = 0x01;
+	enum_DI2_FUNC_PAGE_DOWN = 0x02;
+	enum_DI2_FUNC_LAP = 0x03;
+	enum_DI2_FUNC_START_PAUSE = 0x04;
+	enum_DI2_FUNC_UNDEFINE = 0x0F;
+}
+
+message di2_sensor_set_message
+{
+	optional DI2_CHN_NUM num = 1;
+	optional DI2_BUTTON_OP_TYPE button_op_type = 2;
+	optional DI2_FUNC_TYPE func = 3;
+}
+
+//传感器设置数据段
+message sensor_data_message
+{
+	optional SENSOR_TYPE sensor_type = 1[default = enum_SENSOR_TYPE_INVALID];						//传感器类型
+	optional SENSOR_RADIO_TYPE sensor_radio_type = 2[default= enum_SENSOR_RADIO_TYPE_ANT];			//传感器无线类型
+	optional SENSOR_STATUS_TYPE sensor_status_type = 3[default = enum_SENSOR_STATUS_TYPE_SAVED];	//传感器状态
+	optional string sensor_key = 4;																	//设备ANT ID或者BLE MAC,最大长度18个字节
+	optional string sensor_ble_name = 5;															//传感器蓝牙名称
+	optional int32 sensor_rssi = 6;																	//ANT信号强度
+	optional uint32 sensor_pwr = 7;																	//传感器电量
+	optional uint32 wheel_size = 8;																	//自行车轮径  单位mm
+	optional uint32 crank_length = 9;																//曲柄长度 单位mm
+	optional uint32 sensor_forbidden = 10;  														//1 表示传感器被禁用
+	optional uint32 auto_wheel_size = 11;													//1表示启动自动轮径侦测
+	optional radar_sensor_set_message radar_sensor_set_msg = 12;									//雷达传感器设置
+	repeated di2_sensor_set_message di2_sensor_set_msg = 13;										//di2设置															
+}
+
+//传感器设置消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message sensor_message{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_SENSOR];
+	required SENSOR_OPERATE_TYPE sensor_operate_type = 2[default = enum_SENSOR_OPERATE_TYPE_NONE];
+
+	repeated sensor_data_message sensor_data_msg = 3;
+}
+
+

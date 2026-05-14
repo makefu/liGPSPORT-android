@@ -1,0 +1,56 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+import "config.proto";
+
+//语言包模块版本信息说明，后续有更新请注意更新版本日志
+//V1.00版本，设计于2020/11/23日
+
+enum LANGUAGE_PACK_SUB_OPERATE_TYPE
+{
+	enum_LANG_SUB_OPERATE_TYPE_INVALID = 0x00;			//无效的操作
+	
+	enum_LANG_SUB_OPERATE_TYPE_SET_DOWNLOAD_URL = 0x01;	//设置语言包下载地址
+
+	enum_LANG_SUB_OPERATE_TYPE_GET_MODULE_INFO = 0x10;	//获取模块的信息，包括模块协议版本信息、支持的命令
+	enum_LANG_SUB_OPERATE_TYPE_GET_LIST = 0x11;			//获取语言包列表,包括编号
+
+	enum_LANG_SUB_OPERATE_TYPE_ADD_PACK = 0x20;			//下发语言包
+
+	enum_LANG_SUB_OPERATE_TYPE_DEL_PACK = 0x30;			//删除语言包
+}
+
+message language_pack_module_info_msg{
+	repeated LANGUAGE_PACK_SUB_OPERATE_TYPE support_cmd = 1;
+	optional uint32 language_pack_module_version = 2[default = 100];		//语言包模块协议版本，如V1.01则为101 
+}
+
+enum LANGUAGE_PACK_FONT_TYPE
+{
+	enum_LANGUAGE_PACK_FONT_TYPE_INVALID = 0;
+	enum_DianDian = 1;			//点点字体
+}
+
+message language_pack_info_msg{
+	required LANGUAGE_TYPE language_type = 1[default = enum_LANGUAGE_TYPE_INVALID];	//语言类型
+	optional uint32 language_versin = 2;														//语言包版本，如V1.01则为101
+	optional LANGUAGE_PACK_FONT_TYPE font_type = 3;									//字体类型
+	optional uint32 font_size = 4;																//字体字号
+	optional uint32 pack_size = 5;																//语言包大小
+	optional string url = 6;																	//用于码表自动访问服务器下载语言包
+	optional bytes md5_code = 7;                               //md5文件校验码
+}
+
+message language_pack_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_LANGUAGE];
+	required SERVICE_OPERATE_TYPE operate_type = 2[default = enum_SERVICE_OPERATE_TYPE_NONE];
+	required LANGUAGE_PACK_SUB_OPERATE_TYPE  language_sub_operate = 3[default = enum_LANG_SUB_OPERATE_TYPE_INVALID];
+	repeated language_pack_info_msg language_pack_info_message = 4;
+	optional bytes content = 5;																	//语言包文件内容
+	
+	reserved 6 to 15;
+	
+	optional language_pack_module_info_msg module_info_message = 16;							//语言包模块信息，包括支持的命令和模块的版本信息
+}

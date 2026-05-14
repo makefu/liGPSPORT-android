@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+option java_package = "com.igpsport.blelib.bean";
+
+option optimize_for = SPEED;
+
+//此文件定义其它proto文件共同包含的消息类型
+
+/*
+规则：
+- 优先级：基操作 > 子操作，也就是说当基操作能满足条件时，无需子操作类型；
+*/
+
+//服务类型索引号
+/* 
+设备信息：存放用户无法配置的公共项服务；
+用户配置：存放用户能够配置的公共项服务；
+外设设备：存放该外设独有的公共项服务（包含可配置及不可配置项）；
+*/
+enum PERIPHERAL_SERVICE_TYPE
+{   
+    PST_UNSPECIFIED = 0;    //无效
+    
+    reserved 1 to 100;      //供给码表端使用 
+
+    PST_INFO = 101;           //设备信息
+    PST_CONFIG = 102;         //用户配置
+    PST_HR = 103;             //外设：心率设备
+	PST_RADAR = 104;          //外设：雷达设备
+    reserved 105 to 120;      
+    PST_FIRMWARE = 121;      //固件升级
+    reserved 122 to 130;
+    PST_FACTORY = 131;       //工厂相关
+    PST_OEM = 132;           //OEM信息
+}
+
+//服务操作类型
+enum PERIPHERAL_OPERATE_TYPE
+{
+    POT_UNSPECIFIED = 0;   //无效
+    POT_SET = 1;
+    POT_GET = 2;
+    POT_ADD = 3;
+    POT_DEL = 4;
+}

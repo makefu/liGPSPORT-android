@@ -1,0 +1,44 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义电子路书服务相关的消息类型
+
+//子操作类型
+enum ROUTE_BOOK_SUB_OP_TYPE
+{
+  enum_ROUTE_BOOK_GET_SUB_OP_TYPE_NONE = 0x00;
+  enum_ROUTE_BOOK_GET_SUB_OP_TYPE_LIST_NUM_GET = 0x01;
+  enum_ROUTE_BOOK_GET_SUB_OP_TYPE_LIST_GET = 0x02;
+
+  enum_ROUTE_BOOK_SET_SUB_OP_TYPE_USE = 0x11;
+  enum_ROUTE_BOOK_SET_SUB_OP_TYPE_RENAME = 0x12;
+}
+
+//电子路书文件使用状态
+enum ROUTE_BOOK_FILE_STATUS
+{
+  enum_ROUTE_BOOK_FILE_INVALID_STATUS = 0;
+  enum_ROUTE_BOOK_FILE_USED_STATUS = 1;
+  enum_ROUTE_BOOK_FILE_UNUSED_STATUS = 2;
+}
+
+message route_book_infor_message{
+  optional uint32 id = 1;								//电子路书文件的ID
+  optional string name = 3;							//电子路的文件名
+  optional ROUTE_BOOK_FILE_STATUS status = 7;			//电子路文件使用状态
+}
+
+message route_book_data_msg{
+  required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_ROUTE_BOOK];
+  required SERVICE_OPERATE_TYPE operate_type = 2[default = enum_SERVICE_OPERATE_TYPE_NONE];
+  required ROUTE_BOOK_SUB_OP_TYPE	 sub_operate_type = 3[default = enum_ROUTE_BOOK_GET_SUB_OP_TYPE_NONE];
+
+  repeated route_book_infor_message route_book_infor_msg = 4;
+  reserved 5 to 9;
+  optional file_list_get_message route_book_list_get_msg = 10;
+}
+
+

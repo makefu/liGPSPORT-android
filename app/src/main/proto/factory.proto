@@ -1,0 +1,291 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//此文件定义工厂设置服务相关的消息类型
+
+//工厂设置服务操作类型
+enum FACTORY_OPERATE_TYPE
+{ 
+	enum_FACTORY_OPERATE_TYPE_NONE = 0;				//无效操作类型
+	//SN操作类型
+	enum_FACTORY_OPERATE_TYPE_SN_GET = 1;			//获取设备SN
+	enum_FACTORY_OPERATE_TYPE_SN_SEND = 2;			//发送设备SN	
+	enum_FACTORY_OPERATE_TYPE_SN_SET = 3;			//设置设备SN
+
+	enum_FACTORY_OPERATE_TYPE_SENSOR_GET = 4;		//传感器信息获取，包括GPS、RTC、气压、温度、加速度、ANT、KEY
+	enum_FACTORY_OPERATE_TYPE_MEMORY_GET = 5;		//flash 容量
+	enum_FACTORY_OPERATE_TYPE_BATTARY_GET = 6;		//电池信息	
+	
+	enum_FACTORY_OPERATE_TYPE_SIM_FIT_SET = 7;		//生成模拟骑行文件
+
+	enum_FACTORY_OPERATE_TYPE_GPS_COORDINATE_SET = 8;	//设置GPS坐标
+	enum_FACTORY_OPERATE_TYPE_SUN_TIME_SET = 9;			//设置日出日落时间
+	enum_FACTORY_OPERATE_TYPE_SUN_TIME_GET = 10;		//获取日出日落时间
+
+	enum_FACTORY_OPERATE_TYPE_POWER_SAVE_TIME_SET = 11;	//休眠设置
+
+	enum_FACTORY_OPERATE_TYPE_RTC_SET = 12;		//RTC时间设置
+	enum_FACTORY_OPERATE_TYPE_RTC_GET = 13;		//RTC时间获取
+
+	enum_FACTORY_OPERATE_TYPE_FILTER_SET = 14;
+	enum_FACTORY_OPERATE_TYPE_FILTER_GET = 15;
+
+	enum_FACTORY_OPERATE_TYPE_GPS_CONTROL_CMD_SET = 16;	
+	enum_FACTORY_OPERATE_TYPE_GPS_CONTROL_CMD_GET = 17;		
+	enum_FACTORY_OPERATE_TYPE_GPS_GNSS_SET = 18;
+	enum_FACTORY_OPERATE_TYPE_GPS_GNSS_GET = 19;
+	enum_FACTORY_OPERATE_TYPE_GPS_DYNAMIC_SET = 20;
+	enum_FACTORY_OPERATE_TYPE_GPS_DYNAMIC_GET = 21;
+	enum_FACTORY_OPERATE_TYPE_GPS_CMD_SET = 22;
+
+	enum_FACTORY_OPERATE_TYPE_CONTROL_SET = 23;
+	enum_FACTORY_OPERATE_TYPE_CONTROL_DATA_SET = 24;		//设定指定数据项数值
+
+	enum_FACTORY_OPERATE_TYPE_ALL_GET = 254;				//获取所有数据
+}
+
+//----------------------SN信息----------------------//
+message factory_sn_message
+{
+	optional string sn = 1;				//设备SN
+}
+
+//----------------------传感器类型----------------------//
+enum FACTORY_SENSOR_TYPE
+{
+	enum_SENSOR_INVALID = 0;
+	enum_GPS = 1;
+	enum_RTC = 2;
+	enum_AIR = 3;
+	enum_TEM = 4;
+	enum_ACC = 5;
+	enum_ANT = 6;
+	enum_KEY = 7;
+}
+
+message factory_sensor_message
+{
+	optional FACTORY_SENSOR_TYPE sensor_type = 1[default = enum_SENSOR_INVALID];
+	optional int32 data = 2;		
+	optional uint32 status = 3;
+}
+
+//----------------------存储容量----------------------//
+message memory_message
+{
+	optional uint32 total = 1;			//总容量
+	optional uint32 remain = 2;			//剩余容量
+}
+
+//----------------------电池信息----------------------//
+message battary_message
+{
+	optional uint32 voltage = 1;			//电池电压 mV
+	optional uint32 power_percent = 2;	//电量百分比 %
+}
+
+
+//----------------------模拟文件----------------------//
+message sim_fit_message
+{
+	optional uint32 num = 1;			//fit文件数量
+	optional uint32 size  = 2;			//fit文件大小
+}
+
+//----------------------控制命令----------------------//
+enum CONTROL_CMD_TYPE
+{
+	enum_CMD_INVALID = 0;
+	enum_CMD_ENTER_CHECK = 0x01;
+	enum_CMD_LOCK = 0x02;
+
+	enum_CMD_FORMAT = 0x10;
+	enum_CMD_LFORMAT = 0x11;
+	enum_CMD_PARA_RESET = 0x12;
+	enum_CMD_FACTORY_RESET = 0x13;
+
+	enum_CMD_TEMPERATURE_LOG = 0x20;
+	enum_CMD_VOLTAGE_LOG = 0x21;
+	enum_CMD_ANT_LOG = 0x22;
+}
+
+message control_message
+{
+	optional CONTROL_CMD_TYPE cmd_type = 1[default = enum_CMD_INVALID];
+	optional uint32 status = 2;
+}
+
+//----------------------GPS位置设置----------------------//
+message gps_coordinate_message
+{
+	optional double latitude = 1;			//纬度，未定位则值为0
+	optional double longitude = 2;			//经度，未定位则值为0
+}
+
+//----------------------日出日落时间----------------------//
+message sun_time_message
+{
+	optional uint32 sunrise_time = 1;
+	optional uint32 sunset_time = 2;
+}
+
+//----------------------休眠----------------------//
+message power_save_message
+{
+	optional uint32 time = 1;
+}
+
+//----------------------RTC时间----------------------//
+message rtc_message
+{
+	optional uint32 time = 1;
+}
+
+//----------------------过滤----------------------//
+enum FILTER_TYPE
+{
+	enum_FILTER_INVALID = 0;
+	enum_FILTER_SMART_SAVE = 1;
+	enum_FILTER_SPD = 2;
+	enum_FILTER_CAD = 3;
+	enum_FILTER_HRM = 4;
+	enum_FILTER_GPS_ICON = 5;
+	enum_FLTER_ANT_ICON = 6;
+}
+
+message filter_message
+{
+	optional FILTER_TYPE filter_type = 1[default = enum_FILTER_INVALID];
+	optional uint32 status = 2;
+}
+
+//----------------------GPS----------------------//
+//GPS控制命令
+enum GPS_CONTROL_CMD_TYPE
+{
+	enum_GPS_CMD_INVALID = 0;
+	enum_GPS_CMD_POWER = 1;
+	enum_GPS_CMD_COLD_START = 2;
+	enum_GPS_CMD_POWER_SAVE = 3;
+	enum_GPS_CMD_GNSS = 4;
+}
+ 
+message gps_control_cmd_message
+{
+	optional GPS_CONTROL_CMD_TYPE gps_cmd_type = 1[default = enum_GPS_CMD_INVALID];
+	optional uint32 status = 2;
+}
+
+//GPS GNSS设置
+enum GNSS_TYPE
+{
+	enum_GNSS_INVALID = 0;
+	enum_GNSS_GPS = 0x01;
+	enum_GNSS_BD = 0x02;
+	enum_GNSS__GLONASS = 0x04;
+	enum_GNSS__QZSS = 0x08;
+	enum_GNSS_SBAS = 0x10;
+	enum_GNSS_GALILEO = 0x20;
+	enum_GNSS_IMES = 0x40;
+}
+
+message gps_gnss_message
+{
+	optional uint32 gnss_gnss_cmd = 1;
+}
+
+//GPS 动态模式设置 手持、自行车等模式
+enum GPS_DYNAMIC_TYPE
+{
+	enum_GPS_DYNAMIC_INVALID = 0;
+	euum_PORTABLE = 1;
+	enum_STATIONARY = 2;
+	enum_PEDESTRIAN = 3;
+	enum_AUTOMOTIVE = 4;
+	enum_SEA = 5;
+	enum_1G =6;
+	enum_2G = 7;
+	enum_4G = 8;
+	enum_WRIST = 9;
+	enum_BIKE = 10;
+}
+
+message gps_dynamic_message
+{
+	optional GPS_DYNAMIC_TYPE gps_dynamic_type = 1[default = enum_GPS_DYNAMIC_INVALID];	
+}
+
+message gps_cmd_message
+{
+	repeated bytes gps_cmd = 1;
+}
+
+message data_set_message
+{
+	optional uint32 data_type = 1;
+	optional uint32 value = 2;
+}
+
+//gps信噪比
+message gps_snr_massage
+{
+	optional GNSS_TYPE gnss_type = 1;
+	repeated uint32 data = 2;  
+}
+
+//设备类型
+enum ANT_DEV_TYPE
+{
+    enumInvalid_dev_type = 0;
+    enumHrm_dev_type = 1;
+    enumCbsc_dev_type = 2;
+    enumBpwr_dev_type = 3;
+    enumCad_dev_type = 5;
+    enumSpd_dev_type = 6;
+    enumShft_dev_type = 7;
+    enumDi2_dev_type = 8;
+    enumFe_dev_type = 9;
+    enumMax_dev_type = 10;
+}
+
+message ant_message
+{
+	optional ANT_DEV_TYPE dev_type = 1;
+	optional uint32 dev_connect_status = 2;
+	optional uint32 data = 3;
+}
+
+//工厂设置服务消息类型
+//消息格式：服务类型 + 操作类型 + 数据段
+message factory_msg{
+	required service_type_index service_type = 1[default = enum_SERVICE_TYPE_INDEX_FACTORY];
+	required FACTORY_OPERATE_TYPE factory_operate_type = 2[default = enum_FACTORY_OPERATE_TYPE_NONE];
+
+	repeated factory_sn_message factory_sn_msg = 3;
+	repeated factory_sensor_message factory_sensor_msg = 4;
+	optional memory_message memory_msg = 5;
+	optional battary_message battary_msg = 6;
+	optional sim_fit_message sim_fit_msg = 7;
+	optional control_message control_msg = 8;
+
+	optional gps_coordinate_message gps_coordinate_msg = 9;
+	optional sun_time_message sun_time_msg = 10;
+	optional power_save_message power_save_msg = 11;
+	optional rtc_message rtc_msg = 12;
+	optional filter_message filter_msg = 13;
+
+
+	optional gps_control_cmd_message gps_control_cmd_msg = 14;
+	optional gps_gnss_message gps_gnss_msg = 15;
+	optional gps_dynamic_message gps_dynamic_msg = 16;
+	optional gps_cmd_message gps_cmd_msg = 17;
+
+	repeated data_set_message data_set_msg = 18;
+	repeated gps_snr_massage gps_snr_msg = 19;
+	repeated ant_message ant_msg = 20;
+}
+
+

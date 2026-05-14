@@ -1,0 +1,28 @@
+syntax = "proto2";
+
+option java_package = "com.igpsport.blelib.bean";
+
+import "common.proto";
+
+//LOG同步交互过程
+//1、当设备有LOG时，设备连接手机后，通知APP
+//2、APP获取当前LOG的条数
+//3、APP获取LOG
+
+enum LOG_SUB_OPERATE_TYPE
+{
+	enum_LOG_INVALID = 0x00;
+
+	enum_LOG_NUMBER_GET = 0x10;
+	enum_LOG_GET = 0x11;
+}
+
+message log_msg{
+	required service_type_index service = 1[default = enum_SERVICE_TYPE_INDEX_LOG];
+	required SERVICE_OPERATE_TYPE operate = 2[default = enum_SERVICE_OPERATE_TYPE_NONE];
+	required LOG_SUB_OPERATE_TYPE sub_operate = 3[default = enum_LOG_INVALID];
+	
+	optional string log_name = 4;
+	optional bytes content = 5;
+	optional uint32 log_num = 6;
+}

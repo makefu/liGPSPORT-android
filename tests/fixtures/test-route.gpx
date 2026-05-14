@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="ligpsport-e2e" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <name>ligpsport-e2e-test</name>
+  </metadata>
+  <trk>
+    <name>e2e-test</name>
+    <trkseg>
+      <trkpt lat="52.520000" lon="13.405000"><ele>34.0</ele></trkpt>
+      <trkpt lat="52.520500" lon="13.405800"><ele>34.2</ele></trkpt>
+      <trkpt lat="52.521000" lon="13.406700"><ele>34.5</ele></trkpt>
+      <trkpt lat="52.521600" lon="13.407500"><ele>34.7</ele></trkpt>
+      <trkpt lat="52.522300" lon="13.408400"><ele>35.0</ele></trkpt>
+      <trkpt lat="52.523000" lon="13.409100"><ele>35.3</ele></trkpt>
+      <trkpt lat="52.523700" lon="13.410000"><ele>35.6</ele></trkpt>
+      <trkpt lat="52.524400" lon="13.410800"><ele>35.9</ele></trkpt>
+      <trkpt lat="52.525100" lon="13.411500"><ele>36.1</ele></trkpt>
+      <trkpt lat="52.525700" lon="13.412300"><ele>36.4</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>
