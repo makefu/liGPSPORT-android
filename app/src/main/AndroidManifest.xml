@@ -88,6 +88,7 @@
                 <action android:name="de.syntaxfehler.ligpsport.action.MOCK_LOCATION" />
                 <action android:name="de.syntaxfehler.ligpsport.action.STATUS" />
                 <action android:name="de.syntaxfehler.ligpsport.action.SEND_AGPS" />
+                <action android:name="de.syntaxfehler.ligpsport.action.SEND_LOCATION" />
             </intent-filter>
         </receiver>
 

@@ -60,6 +60,9 @@ class AdbCliReceiver : BroadcastReceiver() {
             ACTION_SEND_AGPS -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_SEND_AGPS, intent,
             )
+            ACTION_SEND_LOCATION -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_SEND_LOCATION, intent,
+            )
             else -> AdbResult.emit(
                 action.substringAfterLast('.').uppercase(),
                 reqId,
@@ -166,6 +169,7 @@ class AdbCliReceiver : BroadcastReceiver() {
         const val ACTION_MOCK_LOCATION = "de.syntaxfehler.ligpsport.action.MOCK_LOCATION"
         const val ACTION_STATUS = "de.syntaxfehler.ligpsport.action.STATUS"
         const val ACTION_SEND_AGPS = "de.syntaxfehler.ligpsport.action.SEND_AGPS"
+        const val ACTION_SEND_LOCATION = "de.syntaxfehler.ligpsport.action.SEND_LOCATION"
 
         const val EXTRA_REQ_ID = "req_id"
     }

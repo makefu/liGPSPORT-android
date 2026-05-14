@@ -66,6 +66,7 @@ class UploadForegroundService : Service() {
                     OP_LIST_ROUTES -> doListRoutes(reqId)
                     OP_DELETE_ALL_ROUTES -> doDeleteAllRoutes(intent, reqId)
                     OP_SEND_AGPS -> doSendAgps(reqId)
+                    OP_SEND_LOCATION -> doSendLocation(reqId)
                     else -> AdbResult.emit(
                         action = op.ifEmpty { "UNKNOWN" },
                         reqId = reqId,
@@ -164,6 +165,11 @@ class UploadForegroundService : Service() {
         emitResult("SEND_AGPS", reqId, res)
     }
 
+    private suspend fun doSendLocation(reqId: String) {
+        val res = UploadPipeline.sendCurrentLocation(this)
+        emitResult("SEND_LOCATION", reqId, res)
+    }
+
     private suspend fun doDeleteAllRoutes(intent: Intent, reqId: String) {
         val confirm = intent.getStringExtra(EXTRA_CONFIRM)
         if (confirm != "true") {
@@ -237,6 +243,11 @@ class UploadForegroundService : Service() {
                     res.points?.let { put("points", it.toString()) }
                     res.providerId?.let { put("provider", it) }
                     res.agpsBytes?.let { put("agps_bytes", it.toString()) }
+                    // Pin to Locale.US so the decimal separator is a
+                    // period regardless of device locale — the e2e
+                    // harness greps these by exact value.
+                    res.seedLat?.let { put("seed_lat", String.format(java.util.Locale.US, "%.5f", it)) }
+                    res.seedLon?.let { put("seed_lon", String.format(java.util.Locale.US, "%.5f", it)) }
                     if (res.bytesSent > 0) put("cnx_bytes", res.bytesSent.toString())
                     put("device_status", res.status.toString())
                 }
@@ -312,6 +323,7 @@ class UploadForegroundService : Service() {
         const val OP_LIST_ROUTES = "LIST_ROUTES"
         const val OP_DELETE_ALL_ROUTES = "DELETE_ALL_ROUTES"
         const val OP_SEND_AGPS = "SEND_AGPS"
+        const val OP_SEND_LOCATION = "SEND_LOCATION"
 
         fun enqueue(ctx: Context, op: String, reqId: String, intent: Intent) {
             val launchIntent = Intent(ctx, UploadForegroundService::class.java).apply {

@@ -110,6 +110,7 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.LIST_ROUTERS` | inline | — | `count=`, `current=`, per-router `r<N>_id=`, `r<N>_name=`, `r<N>_offline=` |
 | `…action.MOCK_LOCATION` | inline | `--ef lat --ef lon` | `lat=`, `lon=` — sets in-process `MockLocationStore`, consulted by `PLAN_AND_UPLOAD` when no explicit start is given |
 | `…action.SEND_AGPS` | service | — | `agps_bytes=`, `device_status=` — fetches u-blox AssistNow Online and uploads as `file_type=AGPS(7)`. Token is auto-resolved from iGPSport's prod config endpoint (mirrors the official app) when `LIGPSPORT_AGPS_TOKEN` is unset; the env var overrides it when you have your own u-blox AssistNow token. Also piggybacked silently on every `UPLOAD` / `PLAN_AND_UPLOAD` (best-effort: failure doesn't fail the route) — successful piggyback shows `agps_bytes=<N>` on those RESULT lines too. |
+| `…action.SEND_LOCATION` | service | — | `seed_lat=`, `seed_lon=`, `device_status=` — injects the current location as a position prior via the FACTORY `GPS_COORDINATE_SET` op (service=11, op=8). Resolves via `MockLocationStore` → `FusedLocationProviderClient` → `lastLocation`. Also piggybacked silently on every `UPLOAD` / `PLAN_AND_UPLOAD` between the AGPS step and the route upload — successful piggyback shows `seed_lat=` + `seed_lon=` on those RESULT lines. |
 
 ### Critical rule: BLE ops live in the foreground service, not the receiver
 

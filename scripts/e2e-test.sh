@@ -223,6 +223,24 @@ if [ "${LIGPSPORT_TEST_AGPS:-1}" = "1" ]; then
     fi
 fi
 
+# 2c. Standalone SEND_LOCATION test. Uses the mock location set
+#     below (or whatever MockLocationStore currently holds). The
+#     FACTORY GPS_COORDINATE_SET wire path is independent of AGPS —
+#     this is a fast, network-free sanity check that the device
+#     accepts position priors.
+if [ "${LIGPSPORT_TEST_LOCATION:-1}" = "1" ]; then
+    # Seed a mock location first so resolveCurrentLocation has
+    # something to return on a headless test rig with no real fix.
+    broadcast_and_wait MOCK_LOCATION 5 --ef lat "$START_LAT" --ef lon "$START_LON" >/dev/null
+    set +e
+    broadcast_and_wait SEND_LOCATION 15
+    loc_rc=$?
+    set -e
+    if [ "$loc_rc" -ne 0 ]; then
+        echo "    (SEND_LOCATION non-fatal — continuing)"
+    fi
+fi
+
 # 3. Sanity: enumerate routers and check we have at least 3.
 broadcast_and_wait LIST_ROUTERS 5
 COUNT=$(field "count")

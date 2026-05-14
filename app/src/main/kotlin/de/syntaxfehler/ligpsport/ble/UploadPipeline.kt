@@ -53,6 +53,11 @@ object UploadPipeline {
             /** Number of AGPS bytes piggybacked before this upload,
              *  null when AGPS was skipped (no token / fetch error). */
             val agpsBytes: Int? = null,
+            /** Coordinates that were injected as a position prior
+             *  (FACTORY GPS_COORDINATE_SET) piggybacked alongside the
+             *  upload, null when skipped (no fix / device rejected). */
+            val seedLat: Double? = null,
+            val seedLon: Double? = null,
         ) : Result()
         data class Failure(val reason: String, val status: Int = -1) : Result()
     }
@@ -150,6 +155,13 @@ object UploadPipeline {
             // route upload — we just log it and proceed.
             val agpsBytes = uploadAgpsBestEffort(transport)
 
+            // Inject the phone's current location as a starting-point
+            // prior. AGPS supplies "which satellite is where in orbit";
+            // SET_COORDINATE supplies "the receiver is right here" —
+            // together they hot-start the BSC200's GNSS chip. Best-
+            // effort, same as AGPS.
+            val seedFix = injectCurrentLocationBestEffort(context, transport)
+
             Log.i(TAG, "upload: sending route…")
             val r = FileTransfer.uploadGeneralFile(
                 transport = transport,
@@ -167,6 +179,8 @@ object UploadPipeline {
                     fileId = fileId,
                     points = route.points.size,
                     agpsBytes = agpsBytes,
+                    seedLat = seedFix?.latitude,
+                    seedLon = seedFix?.longitude,
                 )
             } else {
                 Result.Failure(r.message, r.status)
@@ -175,6 +189,69 @@ object UploadPipeline {
             Result.Failure("BLE error: ${e.message}")
         } finally {
             transport.runCatching { close() }
+        }
+    }
+
+    // ---- Location seed ------------------------------------------------
+
+    /**
+     * Standalone entry: resolve the phone's current location and push
+     * it to the device via FACTORY GPS_COORDINATE_SET. Used by the
+     * `…action.SEND_LOCATION` adb broadcast for headless verification.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun sendCurrentLocation(context: Context): Result {
+        val fix = resolveCurrentLocation(context)
+            ?: return Result.Failure("no GPS fix — set a mock location or wait for a real fix")
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, name, mac) = transportSetup
+        return try {
+            transport.open()
+            val r = LocationInjector.setCoordinate(transport, fix.latitude, fix.longitude)
+            if (r.success) {
+                Result.Success(
+                    deviceName = name,
+                    deviceMac = mac,
+                    seedLat = fix.latitude,
+                    seedLon = fix.longitude,
+                    status = r.status,
+                )
+            } else {
+                Result.Failure(r.message, r.status)
+            }
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    /**
+     * Returns the injected [Point] on success, or null when no fix
+     * was available or the device rejected. Never throws — failure
+     * is silent so the route upload path stays robust.
+     */
+    private suspend fun injectCurrentLocationBestEffort(
+        context: Context,
+        transport: Transport,
+    ): Point? {
+        val fix = resolveCurrentLocation(context)
+        if (fix == null) {
+            Log.i(TAG, "location-seed: no fix available — skipping")
+            return null
+        }
+        val r = try {
+            LocationInjector.setCoordinate(transport, fix.latitude, fix.longitude)
+        } catch (e: Exception) {
+            Log.w(TAG, "location-seed: exception ${e.message}")
+            return null
+        }
+        return if (r.success) {
+            Log.i(TAG, "location-seed: ok lat=${fix.latitude} lon=${fix.longitude}")
+            fix
+        } else {
+            Log.w(TAG, "location-seed: device rejected (status=${r.status}): ${r.message}")
+            null
         }
     }
 
