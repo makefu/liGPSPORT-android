@@ -240,6 +240,7 @@ The instrumented tests + adb harness identify UI surfaces by
 | `osm_map` | The `AndroidView` hosting the osmdroid `MapView` |
 | `search_bar` | DockedSearchBar at the top of Map |
 | `settings_fab` | Gear-icon FAB, bottom-end |
+| `my_location_fab` | My-location FAB stacked above settings; shown only once a GPS fix is available |
 | `destination_card` | Bottom card on Map when a destination is set |
 | `plan_button` | Plan / Re-plan button inside the destination card |
 | `upload_button` | Upload button inside the destination card |

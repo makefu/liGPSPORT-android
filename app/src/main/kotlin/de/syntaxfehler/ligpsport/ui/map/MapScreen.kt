@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
@@ -404,18 +405,22 @@ fun MapScreen(
             }
         }
 
-        // Compact settings shortcut, bottom-end so it doesn't crowd
-        // the docked search bar at the top. Visible whether or not a
-        // destination is selected.
-        FloatingActionButton(
-            onClick = onOpenSettings,
+        // Stacked FABs in the bottom-right corner. Extracted into a
+        // separate composable so the visibility-gating logic ("my
+        // location FAB is only present when a fix is available") can
+        // be exercised by a small Compose UI test without booting up
+        // the whole MapScreen + osmdroid + Photon stack.
+        BottomEndFabs(
+            currentLocation = currentLocation,
+            onMyLocation = { pt ->
+                mapView.controller.animateTo(GeoPoint(pt.latitude, pt.longitude))
+                mapView.controller.setZoom(16.0)
+            },
+            onOpenSettings = onOpenSettings,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 24.dp)
-                .testTag("settings_fab"),
-        ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings")
-        }
+                .padding(end = 16.dp, bottom = 24.dp),
+        )
 
         // Bottom card appears as soon as a destination is set.
         destination?.let { dest ->
@@ -483,6 +488,41 @@ fun MapScreen(
             ) {
                 Text(msg, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
+        }
+    }
+}
+
+/**
+ * Bottom-right FAB stack: settings (always) + my-location (only when a
+ * fix is available). Internal-visible so a Compose UI test can exercise
+ * the visibility gating without pulling in the rest of MapScreen.
+ */
+@Composable
+internal fun BottomEndFabs(
+    currentLocation: Point?,
+    onMyLocation: (Point) -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        if (currentLocation != null) {
+            FloatingActionButton(
+                onClick = { onMyLocation(currentLocation) },
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.testTag("my_location_fab"),
+            ) {
+                Icon(Icons.Default.MyLocation, contentDescription = "Center on my location")
+            }
+        }
+        FloatingActionButton(
+            onClick = onOpenSettings,
+            modifier = Modifier.testTag("settings_fab"),
+        ) {
+            Icon(Icons.Default.Settings, contentDescription = "Settings")
         }
     }
 }
