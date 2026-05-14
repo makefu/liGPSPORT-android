@@ -1,0 +1,10 @@
+# Template for `agps.properties`. Copy this file to `agps.properties`
+# (gitignored sibling, same directory) and fill in your u-blox
+# AssistNow developer token. See `docs/AGPS_TOKEN.md` for how to
+# recover one from the official iGPSPORT APK.
+#
+# This file is the primary source for `BuildConfig.AGPS_TOKEN` —
+# overrides the `LIGPSPORT_AGPS_TOKEN` env var when present. Leave
+# the value empty (or delete `agps.properties` entirely) to fall
+# back to `AgpsClient`'s runtime auto-fetch.
+token=

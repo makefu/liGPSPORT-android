@@ -40,13 +40,24 @@ adb logcat -s LigpsportAdb:I | grep SEND_AGPS
 
 If you have your own AssistNow developer token (free from u-blox at
 <https://www.u-blox.com/en/assistnow-service-evaluation-token-request>),
-pass it at build time and the runtime fetch is bypassed:
+or one recovered from the official APK by the procedure below, the
+build will pick it up from one of two sources, in order:
 
-```sh
-LIGPSPORT_AGPS_TOKEN=<your-token> nix run .#build-release
-```
+1. **`app/agps.properties`** — gitignored, the primary place for a
+   developer or CI machine to keep a persistent token. Format is a
+   single-line java-properties file:
+   ```properties
+   token=YOUR-TOKEN-HERE
+   ```
+   See `app/agps.properties.example` for the template; copy it to
+   `app/agps.properties` and fill in the value.
+2. **`LIGPSPORT_AGPS_TOKEN`** env var — for one-off CI builds or
+   when you don't want the value on disk at all:
+   ```sh
+   LIGPSPORT_AGPS_TOKEN=<your-token> nix run .#build-release
+   ```
 
-The string is written into
+Either way the string is written into
 `app/build/generated/source/buildConfig/release/.../BuildConfig.java`
 as `public static final String AGPS_TOKEN = "…"` and used directly
 by `AgpsClient.fetchOnline`.

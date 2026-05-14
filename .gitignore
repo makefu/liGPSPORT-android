@@ -25,6 +25,11 @@ result-*
 *.keystore
 keystore.properties
 
+# AGPS token — see docs/AGPS_TOKEN.md. Holds a u-blox AssistNow
+# developer token; baked into BuildConfig.AGPS_TOKEN at build time.
+# Tracked sibling `agps.properties.example` documents the format.
+app/agps.properties
+
 # Misc
 .DS_Store
 *.log

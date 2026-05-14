@@ -1,4 +1,5 @@
 import com.google.protobuf.gradle.id
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -22,12 +23,24 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         // u-blox AssistNow Online developer token — used by the AGPS
-        // pre-seed step in UploadPipeline. Empty = AGPS seeding is
-        // skipped silently. Obtain a free token at
-        // https://www.u-blox.com/en/assistnow-service-evaluation-token-request
-        // and inject via the environment variable below; see
-        // /home/makefu/r/ligpsport/docs/PROTOCOL.md §10.
-        val agpsToken = System.getenv("LIGPSPORT_AGPS_TOKEN") ?: ""
+        // pre-seed step in UploadPipeline. See docs/AGPS_TOKEN.md.
+        //
+        // Resolution order:
+        //   1. `agps.properties` next to this file (gitignored — for
+        //      release builds where you want to ship a recovered or
+        //      developer-issued token without committing it).
+        //   2. `LIGPSPORT_AGPS_TOKEN` env var (for CI / one-off builds).
+        //   3. Empty — the runtime auto-fetch in AgpsClient takes over.
+        val agpsPropsFile = file("agps.properties")
+        val agpsToken: String = when {
+            agpsPropsFile.isFile -> {
+                val props = Properties().apply {
+                    agpsPropsFile.inputStream().use { load(it) }
+                }
+                (props.getProperty("token") ?: "").trim()
+            }
+            else -> System.getenv("LIGPSPORT_AGPS_TOKEN") ?: ""
+        }
         buildConfigField("String", "AGPS_TOKEN", "\"${agpsToken}\"")
     }
 
