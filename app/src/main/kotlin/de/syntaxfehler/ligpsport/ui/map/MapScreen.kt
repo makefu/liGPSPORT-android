@@ -1,11 +1,9 @@
 package de.syntaxfehler.ligpsport.ui.map
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
-import android.graphics.Color as AndroidColor
-import android.graphics.drawable.Drawable
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Point as AndroidPoint
+import android.view.MotionEvent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -22,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
@@ -65,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
+import de.syntaxfehler.ligpsport.data.MarkerHitboxPreferences
 import de.syntaxfehler.ligpsport.data.RouteSessionStore
 import de.syntaxfehler.ligpsport.data.RouterPreferences
 import de.syntaxfehler.ligpsport.route.GpxParser
@@ -129,6 +129,22 @@ fun MapScreen(
     // Set by dragging the Start marker on the map; takes precedence
     // over `currentLocation` in the auto-plan effect.
     var startOverride by remember { mutableStateOf<Point?>(null) }
+    // Marker hit-area size. Settings-controlled (in dp); recomposes
+    // markers whenever the value changes. Re-read on every resume so
+    // a tweak in Settings → Map markers takes effect on next return.
+    val hitboxPrefs = remember { MarkerHitboxPreferences(ctx) }
+    var hitboxSizeDp by remember { mutableStateOf(hitboxPrefs.get()) }
+    @Suppress("DEPRECATION")
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                hitboxSizeDp = hitboxPrefs.get()
+            }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs) }
+    }
     // Drag-end handler for the destination marker. Updates coords but
     // keeps the existing label (a drag isn't a "pick a new place"
     // gesture) and keeps the intermediates list intact (the user is
@@ -208,7 +224,7 @@ fun MapScreen(
     LaunchedEffect(mapView) {
         initialSession?.let { s ->
             val dest = Destination(s.destinationName, s.destinationLat, s.destinationLon)
-            setDestination(mapView, null, dest, onDestDragEnd)
+            setDestination(mapView, null, dest, hitboxSizeDp, onDestDragEnd)
             mapView.controller.animateTo(GeoPoint(s.destinationLat, s.destinationLon))
             s.plannedGpx?.let { drawRoute(mapView, it) }
         }
@@ -329,7 +345,7 @@ fun MapScreen(
                         lon = p.longitude,
                     )
                     intermediates = emptyList()
-                    setDestination(mapView, destination, provisional, onDestDragEnd)
+                    setDestination(mapView, destination, provisional, hitboxSizeDp, onDestDragEnd)
                     destination = provisional
                     // Collapse the search overlay — the user just made
                     // a pick gesture; keeping the search panel open
@@ -348,7 +364,7 @@ fun MapScreen(
                         val cur = destination ?: return@launch
                         if (cur.lat != p.latitude || cur.lon != p.longitude) return@launch
                         val upgraded = Destination(named.name, p.latitude, p.longitude)
-                        setDestination(mapView, cur, upgraded, onDestDragEnd)
+                        setDestination(mapView, cur, upgraded, hitboxSizeDp, onDestDragEnd)
                         destination = upgraded
                     }
                 }
@@ -435,13 +451,20 @@ fun MapScreen(
                 }
             }
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(suggestions, key = { it.latitude.toString() + "_" + it.longitude.toString() + "_" + it.name }) { result ->
+                itemsIndexed(
+                    items = suggestions,
+                    // Index in the key guarantees uniqueness even when
+                    // Photon returns two features at the same (name, lat,
+                    // lon) — happens for stacked POIs and used to crash
+                    // LazyColumn with "Two keys are equal".
+                    key = { i, r -> "$i|${r.latitude}|${r.longitude}|${r.name}" },
+                ) { _, result ->
                     SuggestionRow(
                         result = result,
                         onClick = {
                             val picked = Destination(result.name, result.latitude, result.longitude)
                             intermediates = emptyList()
-                            destination = setDestination(mapView, destination, picked, onDestDragEnd)
+                            destination = setDestination(mapView, destination, picked, hitboxSizeDp, onDestDragEnd)
                             mapView.controller.animateTo(GeoPoint(picked.lat, picked.lon))
                             searchQuery = result.name
                             queryFlow.value = ""
@@ -521,20 +544,20 @@ fun MapScreen(
         // GPS updates don't reset the planned origin. Hidden when there
         // is no destination (nothing to route from yet) and there's no
         // override — the blue MyLocation dot is enough on its own.
-        LaunchedEffect(destination, startOverride, currentLocation) {
+        LaunchedEffect(destination, startOverride, currentLocation, hitboxSizeDp) {
             val markerAt = startOverride
                 ?: if (destination != null) currentLocation else null
-            setStartMarker(mapView, markerAt, onStartDragEnd)
+            setStartMarker(mapView, markerAt, hitboxSizeDp, onStartDragEnd)
         }
 
-        // Re-render intermediate markers whenever the list changes.
-        // Each marker is draggable (move → re-plan) and tappable
-        // (tap → remove). Stable Waypoint.id keeps drag-end edits
-        // targeting the right entry across recompositions.
-        LaunchedEffect(intermediates) {
+        // Re-render intermediate markers whenever the list changes
+        // OR the hitbox preference changes (so the new size applies
+        // without requiring a re-tap of every waypoint).
+        LaunchedEffect(intermediates, hitboxSizeDp) {
             setIntermediates(
                 mapView = mapView,
                 waypoints = intermediates,
+                hitboxSizeDp = hitboxSizeDp,
                 onMove = { id, lat, lon ->
                     intermediates = intermediates.map {
                         if (it.id == id) it.copy(lat = lat, lon = lon) else it
@@ -544,6 +567,15 @@ fun MapScreen(
                     intermediates = intermediates.filterNot { it.id == id }
                 },
             )
+        }
+
+        // Re-render the destination marker too when the hitbox setting
+        // changes. Avoids the user having to clear + re-pick a
+        // destination just for the new hit area to take effect.
+        LaunchedEffect(hitboxSizeDp) {
+            destination?.let {
+                setDestination(mapView, null, it, hitboxSizeDp, onDestDragEnd)
+            }
         }
 
         // Bottom card appears as soon as a destination is set.
@@ -894,6 +926,7 @@ private fun setDestination(
     mapView: MapView,
     existing: Destination?,
     next: Destination,
+    hitboxSizeDp: Int,
     onDragEnd: ((lat: Double, lon: Double) -> Unit)? = null,
 ): Destination {
     mapView.overlays.removeAll { it is Marker && it.title == DEST_MARKER_TITLE }
@@ -902,7 +935,7 @@ private fun setDestination(
         titleField = DEST_MARKER_TITLE,
         snippetField = next.label,
         position = GeoPoint(next.lat, next.lon),
-        fillArgb = DEST_FILL,
+        hitboxSizeDp = hitboxSizeDp,
         onDragEnd = onDragEnd,
     )
     mapView.overlays.add(marker)
@@ -926,6 +959,7 @@ private fun clearDestination(mapView: MapView) {
 private fun setIntermediates(
     mapView: MapView,
     waypoints: List<Waypoint>,
+    hitboxSizeDp: Int,
     onMove: (id: Long, lat: Double, lon: Double) -> Unit,
     onRemove: (id: Long) -> Unit,
 ) {
@@ -936,7 +970,7 @@ private fun setIntermediates(
             titleField = "$INTERMEDIATE_MARKER_PREFIX${w.id}",
             snippetField = "Stop ${index + 1} • tap to remove",
             position = GeoPoint(w.lat, w.lon),
-            fillArgb = VIA_FILL,
+            hitboxSizeDp = hitboxSizeDp,
             onDragEnd = { lat, lon -> onMove(w.id, lat, lon) },
             onClick = { onRemove(w.id) },
         )
@@ -974,73 +1008,66 @@ private const val DEST_MARKER_TITLE = "Destination"
 private const val START_MARKER_TITLE = "Start"
 private const val INTERMEDIATE_MARKER_PREFIX = "Stop#"
 
-/** Material-recommended minimum touch target is 48 dp; we go a tad
- *  larger on long-press / drag so the user gets a clear "I have it"
- *  affordance.
+/**
+ * A [Marker] subclass that widens the touch hit-test well beyond
+ * the visible icon's bounds. osmdroid's default `hitTest` only
+ * accepts touches inside the icon's pixel rect — for the small
+ * default pin that's a ~30×45 dp target, well under the
+ * Material-recommended 48 dp. We override it with a fixed-dp box
+ * sized for the pin's bottom-anchored geometry: a wide area
+ * around the visible pin body, extending a touch below the tip
+ * so a slightly low finger still grabs the marker.
+ *
+ * The visible icon is unchanged — only the touchable area grows.
  */
-private const val MARKER_IDLE_DP = 44
-private const val MARKER_DRAG_DP = 60
+private class WideHitMarker(mapView: MapView, hitboxSizeDp: Int) : Marker(mapView) {
+    private val density = mapView.context.resources.displayMetrics.density
+    // Bias the box: for the bottom-anchored pin, more area above the
+    // tip (pin body lives there) and a slack strip below.
+    private val xHalfPx = (hitboxSizeDp / 2f * density).toInt()
+    private val yAbovePx = (hitboxSizeDp * 3 / 4f * density).toInt()
+    private val yBelowPx = (hitboxSizeDp / 4f * density).toInt()
+    private val scratch = AndroidPoint()
 
-private const val START_FILL = 0xFF1976D2.toInt()  // blue
-private const val DEST_FILL = 0xFFD32F2F.toInt()   // red
-private const val VIA_FILL = 0xFF2E7D32.toInt()    // green
-
-/** Generate a flat-colour circle drawable with a white outline,
- *  sized in dp so the hitbox is consistent across densities.
- */
-private fun circleMarker(
-    ctx: Context,
-    sizeDp: Int,
-    fillArgb: Int,
-): Drawable {
-    val px = (sizeDp * ctx.resources.displayMetrics.density).toInt()
-    val stroke = (3 * ctx.resources.displayMetrics.density).toInt()
-    return GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(fillArgb)
-        setStroke(stroke, AndroidColor.WHITE)
-        setSize(px, px)
-        setBounds(0, 0, px, px)
+    override fun hitTest(event: MotionEvent, mapView: MapView): Boolean {
+        mapView.projection.toPixels(position, scratch)
+        val dx = event.x - scratch.x
+        val dy = event.y - scratch.y
+        // Position is the pin tip (ANCHOR_CENTER/ANCHOR_BOTTOM). Pin
+        // body extends upward from there, so accept a tall box biased
+        // above the tip plus a small slack below for off-tip taps.
+        return dx >= -xHalfPx && dx <= xHalfPx &&
+            dy >= -yAbovePx && dy <= yBelowPx
     }
 }
 
 /**
- * Build a draggable Marker with a generous circular hitbox, drag-
- * lift visual feedback (icon grows while held), and a click handler.
- * Used uniformly by Start / Destination / Intermediate markers so
- * they all feel the same to the touch.
+ * Build a draggable Marker with a wide hit area (see
+ * [WideHitMarker]). Used uniformly by Start / Destination /
+ * Intermediate markers so they all feel the same to the touch.
+ * Visuals use osmdroid's stock pin — the only change vs. plain
+ * `Marker` is the larger hitbox.
  */
 private fun draggableMarker(
     mapView: MapView,
     titleField: String,
     snippetField: String,
     position: GeoPoint,
-    fillArgb: Int,
+    hitboxSizeDp: Int,
     onDragEnd: ((lat: Double, lon: Double) -> Unit)?,
     onClick: (() -> Unit)? = null,
 ): Marker {
-    val ctx = mapView.context
-    val idle = circleMarker(ctx, MARKER_IDLE_DP, fillArgb)
-    val held = circleMarker(ctx, MARKER_DRAG_DP, fillArgb)
-    return Marker(mapView).apply {
+    return WideHitMarker(mapView, hitboxSizeDp).apply {
         this.position = position
         title = titleField
         snippet = snippetField
-        icon = idle
-        // Anchor at the centre so the drawable's bounding box is the
-        // hit-test area; a bottom anchor on a circular icon would mean
-        // the touchable area sits above the visible pin.
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
         if (onDragEnd != null) {
             isDraggable = true
             setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
-                override fun onMarkerDragStart(marker: Marker) {
-                    marker.icon = held
-                    mapView.invalidate()
-                }
+                override fun onMarkerDragStart(marker: Marker) {}
                 override fun onMarkerDrag(marker: Marker) {}
                 override fun onMarkerDragEnd(marker: Marker) {
-                    marker.icon = idle
                     onDragEnd(marker.position.latitude, marker.position.longitude)
                 }
             })
@@ -1062,6 +1089,7 @@ private fun draggableMarker(
 private fun setStartMarker(
     mapView: MapView,
     at: Point?,
+    hitboxSizeDp: Int,
     onDragEnd: (lat: Double, lon: Double) -> Unit,
 ) {
     mapView.overlays.removeAll { it is Marker && it.title == START_MARKER_TITLE }
@@ -1074,7 +1102,7 @@ private fun setStartMarker(
         titleField = START_MARKER_TITLE,
         snippetField = "Drag to change start",
         position = GeoPoint(at.latitude, at.longitude),
-        fillArgb = START_FILL,
+        hitboxSizeDp = hitboxSizeDp,
         onDragEnd = onDragEnd,
     )
     mapView.overlays.add(m)

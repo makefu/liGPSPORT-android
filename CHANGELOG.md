@@ -4,6 +4,71 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-05-15
+
+Route editing on the map (Google-Maps-style), an in-place upload
+button that morphs through Idle / Uploading / Success / Failed
+without a screen change, an AGPS-token runtime override in
+Settings, and a configurable hit-area for the draggable map
+markers. Plus the first hands-off-keyboard regression: a
+search-bar crash on certain Photon responses.
+
+### Added
+
+- **Drag-to-edit routing.** Long-press the map to drop an
+  intermediate stop, drag any of Start / Stop / Destination to
+  move it, tap an intermediate stop to remove it. Each edit
+  triggers an automatic re-plan through the new sequence — the
+  Polyline preview updates without an explicit "Re-plan" tap.
+  Start defaults to the live GPS fix until the user drags it; the
+  drag promotes it to a sticky override so subsequent fixes don't
+  yank the planned origin away. Mirrors Google Maps' multi-stop
+  editing UX. `RouteProvider.planGpx` now accepts an
+  `intermediates: List<Point>` (default empty) and the three
+  built-in providers (BRouter / OSRM / straight-line) thread the
+  via points into their native multi-coord wire formats.
+- **In-place upload** on the map. Tapping Upload no longer opens
+  a separate screen — the button morphs through *Upload* →
+  *Uploading…* → green *Uploaded ✓* / red *Retry — <reason>*.
+  Picking a new destination during the upload doesn't unblock the
+  button; once the upload settles, the button drops back to
+  *Upload* if the destination changed in the meantime.
+- **AGPS-token override in Settings.** A new card near the bottom
+  reports *Custom token set* / *No custom token* — never the
+  value — and offers Set / Change / Remove plus a *Test* button
+  that fires a real AssistNow Online request and reports bytes
+  received or the error inline. Persisted via
+  `AgpsTokenStore`; upload-time resolution order is
+  Settings → `BuildConfig.AGPS_TOKEN` → iGPSport backend
+  (existing fallback).
+- **Configurable marker hit-area.** Settings → Map markers
+  exposes a 48–120 dp slider (default 80 dp) that controls how
+  wide a touch around the visible pin counts as a grab. Underlying
+  `WideHitMarker` overrides osmdroid's `hitTest` so the visible
+  icon stays the stock pin while the touch target scales —
+  Material-recommended 48 dp minimum is the floor.
+
+### Fixed
+
+- **Instant crash on typing in the search bar.** Photon's
+  autocomplete legitimately returns the same `(name, lat, lon)`
+  twice when one feature is indexed under multiple categories.
+  The suggestion list's LazyColumn keyed off `name|lat|lon` and
+  threw `IllegalArgumentException: Key … was already used` on the
+  next layout pass, killing the app. The key now folds in the list
+  index so two identical Photon entries can coexist. Pinned by
+  `SearchSuggestionKeyTest`.
+
+### Internal
+
+- New `data/AgpsTokenStore` + `data/MarkerHitboxPreferences`
+  SharedPreferences wrappers.
+- `WideHitMarker` (osmdroid `Marker` subclass) — fixed-dp box
+  around the bottom-anchored pin tip, with extra slack above
+  (pin body) and a small strip below.
+
+[1.1.0]: https://github.com/makefu/liGPSPORT-android/releases/tag/v1.1.0
+
 ## [1.0.0] — 2026-05-15
 
 **MVP release.** A complete clean-room Android client for the iGPSPORT

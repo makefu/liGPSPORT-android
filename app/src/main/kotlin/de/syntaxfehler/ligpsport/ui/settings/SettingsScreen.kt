@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import de.syntaxfehler.ligpsport.agps.AgpsClient
 import de.syntaxfehler.ligpsport.ble.FileTransfer
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import de.syntaxfehler.ligpsport.data.AgpsTokenStore
+import de.syntaxfehler.ligpsport.data.MarkerHitboxPreferences
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -145,6 +147,9 @@ fun SettingsScreen(
 
             // --- Routes on device -----------------------------------
             item { DeviceRoutesSection(paired = pairedMac != null) }
+
+            // --- Map markers ----------------------------------------
+            item { MarkerHitboxSection() }
 
             // --- AGPS token (kept at the bottom — advanced) ---------
             item { AgpsTokenSection() }
@@ -755,6 +760,51 @@ private fun Chip(text: String) {
     ) {
         Box(Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
             Text(text, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/**
+ * Configurable size of the touch hit-area around each draggable map
+ * marker (Start / Stop / Destination). Slider with discrete steps in
+ * the safe range. Persisted via [MarkerHitboxPreferences]; MapScreen
+ * re-reads on resume and re-renders all markers.
+ */
+@Composable
+private fun MarkerHitboxSection() {
+    val ctx = LocalContext.current
+    val prefs = remember { MarkerHitboxPreferences(ctx) }
+    var size by remember { mutableStateOf(prefs.get()) }
+    Column {
+        SectionLabel("Map markers")
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .testTag("marker_hitbox_card"),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Touch area: $size dp",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Larger values make Start / Stop / Destination pins easier " +
+                        "to grab and drag; smaller values leave more of the map " +
+                        "underneath responsive to taps.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = size.toFloat(),
+                    onValueChange = { size = it.toInt() },
+                    onValueChangeFinished = { prefs.set(size) },
+                    valueRange = MarkerHitboxPreferences.MIN_DP.toFloat()..MarkerHitboxPreferences.MAX_DP.toFloat(),
+                    steps = (MarkerHitboxPreferences.MAX_DP - MarkerHitboxPreferences.MIN_DP) / 4 - 1,
+                    modifier = Modifier.testTag("marker_hitbox_slider"),
+                )
+            }
         }
     }
 }
