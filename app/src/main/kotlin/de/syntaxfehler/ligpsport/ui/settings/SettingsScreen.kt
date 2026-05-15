@@ -14,12 +14,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.AlertDialog
@@ -38,7 +36,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,8 +46,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import de.syntaxfehler.ligpsport.agps.AgpsClient
-import de.syntaxfehler.ligpsport.ble.FileTransfer
-import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import de.syntaxfehler.ligpsport.data.AgpsTokenStore
 import de.syntaxfehler.ligpsport.data.MarkerHitboxPreferences
 import androidx.compose.ui.Alignment
@@ -72,6 +67,8 @@ import de.syntaxfehler.ligpsport.route.RouterRegistry
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPairing: () -> Unit,
+    onOpenRoutes: () -> Unit = {},
+    onOpenActivities: () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     val routerPrefs = remember { RouterPreferences(ctx) }
@@ -145,8 +142,26 @@ fun SettingsScreen(
                 )
             }
 
-            // --- Routes on device -----------------------------------
-            item { DeviceRoutesSection(paired = pairedMac != null) }
+            // --- Device files (sub-screens) -------------------------
+            item { SectionLabel("Device files") }
+            item {
+                SubScreenRow(
+                    title = "Routes on device",
+                    subtitle = "List, delete or wipe uploaded routes.",
+                    enabled = pairedMac != null,
+                    onClick = onOpenRoutes,
+                    testTag = "open_device_routes",
+                )
+            }
+            item {
+                SubScreenRow(
+                    title = "Activities on device",
+                    subtitle = "Download (FIT) or delete recorded rides.",
+                    enabled = pairedMac != null,
+                    onClick = onOpenActivities,
+                    testTag = "open_device_activities",
+                )
+            }
 
             // --- Map markers ----------------------------------------
             item { MarkerHitboxSection() }
@@ -158,271 +173,44 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun DeviceRoutesSection(paired: Boolean) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var routes by remember { mutableStateOf<List<FileTransfer.RouteEntry>>(emptyList()) }
-    var pendingDelete by remember { mutableStateOf<FileTransfer.RouteEntry?>(null) }
-    var pendingDeleting by remember { mutableStateOf(false) }
-    var confirmDeleteAll by remember { mutableStateOf(false) }
-    var deletingAll by remember { mutableStateOf(false) }
-
-    fun refresh() {
-        if (!paired) return
-        loading = true; error = null
-        scope.launch {
-            val res = withContext(Dispatchers.IO) { UploadPipeline.listRoutes(ctx) }
-            when (res) {
-                is UploadPipeline.Result.Success -> routes = res.routes
-                is UploadPipeline.Result.Failure -> error = res.reason
-            }
-            loading = false
-        }
-    }
-
-    LaunchedEffect(paired) { if (paired) refresh() }
-
-    Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Routes on device",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            IconButton(
-                onClick = ::refresh,
-                enabled = paired && !loading,
-                modifier = Modifier.testTag("refresh_routes"),
-            ) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-            }
-        }
-        if (!paired) {
-            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                Text(
-                    "Pair a device to see its uploaded routes.",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            return@Column
-        }
-        if (loading) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                Text("Loading routes…", style = MaterialTheme.typography.bodyMedium)
-            }
-            return@Column
-        }
-        error?.let {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            ) {
-                Text(
-                    it,
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            return@Column
-        }
-        if (routes.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                Text(
-                    "No routes uploaded.",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (r in routes) {
-                    RouteRow(
-                        entry = r,
-                        onDelete = { pendingDelete = r },
-                    )
-                }
-                OutlinedButton(
-                    onClick = { confirmDeleteAll = true },
-                    enabled = !deletingAll && !loading,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .testTag("delete_all_routes"),
-                ) {
-                    Icon(Icons.Filled.Delete, contentDescription = null)
-                    Text("  Delete all routes")
-                }
-            }
-        }
-    }
-
-    if (confirmDeleteAll) {
-        AlertDialog(
-            onDismissRequest = { if (!deletingAll) confirmDeleteAll = false },
-            title = { Text("Delete all routes?") },
-            text = {
-                Column {
-                    Text(
-                        "This removes every inactive route from the BSC200.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    if (routes.any { it.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED }) {
-                        Text(
-                            "The active navigation route is firmware-protected and will " +
-                                "stay on the device — stop navigation on the BSC200 first " +
-                                "if you want to remove it too.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !deletingAll,
-                    onClick = {
-                        deletingAll = true
-                        scope.launch {
-                            val res = withContext(Dispatchers.IO) {
-                                UploadPipeline.deleteAllRoutes(ctx)
-                            }
-                            deletingAll = false
-                            confirmDeleteAll = false
-                            when (res) {
-                                is UploadPipeline.Result.Success -> refresh()
-                                is UploadPipeline.Result.Failure -> error = res.reason
-                            }
-                        }
-                    },
-                    modifier = Modifier.testTag("confirm_delete_all"),
-                ) { Text("Delete all") }
-            },
-            dismissButton = {
-                TextButton(
-                    enabled = !deletingAll,
-                    onClick = { confirmDeleteAll = false },
-                ) { Text("Cancel") }
-            },
-        )
-    }
-
-    val target = pendingDelete
-    if (target != null) {
-        AlertDialog(
-            onDismissRequest = { if (!pendingDeleting) pendingDelete = null },
-            title = { Text("Delete route?") },
-            text = {
-                Column {
-                    Text(
-                        target.name.ifEmpty { "id=${target.id}" },
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (target.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) {
-                        Text(
-                            "The active navigation route is firmware-protected — " +
-                                "the device may report success but keep the route. " +
-                                "Stop navigation on the device first.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = !pendingDeleting,
-                    onClick = {
-                        pendingDeleting = true
-                        scope.launch {
-                            val res = withContext(Dispatchers.IO) {
-                                UploadPipeline.deleteRouteById(
-                                    ctx,
-                                    fileId = target.id,
-                                    name = target.name.ifEmpty { target.id.toString() },
-                                    fileExtension = when (target.fileType) {
-                                        2 -> "gpx"
-                                        3 -> "fit"
-                                        else -> "cnx"
-                                    },
-                                )
-                            }
-                            pendingDeleting = false
-                            pendingDelete = null
-                            when (res) {
-                                is UploadPipeline.Result.Success -> refresh()
-                                is UploadPipeline.Result.Failure -> error = res.reason
-                            }
-                        }
-                    },
-                ) { Text("Delete") }
-            },
-            dismissButton = {
-                TextButton(
-                    enabled = !pendingDeleting,
-                    onClick = { pendingDelete = null },
-                ) { Text("Cancel") }
-            },
-        )
-    }
-}
-
-@Composable
-private fun RouteRow(
-    entry: FileTransfer.RouteEntry,
-    onDelete: () -> Unit,
+private fun SubScreenRow(
+    title: String,
+    subtitle: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
-            .testTag("route_${entry.id}"),
+            .clickable(enabled = enabled, onClick = onClick)
+            .testTag(testTag),
     ) {
         Row(
             Modifier.padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (entry.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) {
-                Icon(
-                    Icons.Filled.Navigation,
-                    contentDescription = "Active route",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-            }
             Column(Modifier.weight(1f)) {
                 Text(
-                    entry.name.ifEmpty { "(unnamed)" },
+                    title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "id=${entry.id}" +
-                        (if (entry.totalDistanceM > 0) " • ${entry.totalDistanceM} m" else "") +
-                        (if (entry.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) " • active" else ""),
+                    if (enabled) subtitle else "$subtitle (pair a device first)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(
-                onClick = onDelete,
-                modifier = Modifier.testTag("delete_route_${entry.id}"),
-            ) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete route")
-            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

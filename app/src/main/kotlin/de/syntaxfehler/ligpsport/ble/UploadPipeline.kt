@@ -68,6 +68,20 @@ object UploadPipeline {
             /** Current device navigation status from ROUTE_PLAN
              *  LIST_GET — populated by `navStatus()`. */
             val navStatus: FileTransfer.NavStatus? = null,
+            /** Recorded activities returned by [listActivities]. */
+            val activities: List<FileTransfer.ActivityListEntry> = emptyList(),
+            /** Activity FIT byte count, populated by
+             *  [downloadActivity]. */
+            val activityBytes: Int? = null,
+            /** Filename the device echoed in `file_download.file_name`
+             *  (may be empty); populated by [downloadActivity]. */
+            val activityFileName: String? = null,
+            /** Absolute path on the phone where the downloaded FIT
+             *  was written; populated by [downloadActivity]. */
+            val activitySavedPath: String? = null,
+            /** Wire timestamp of the activity touched by
+             *  download/delete operations. */
+            val activityTimestamp: Long? = null,
         ) : Result()
         data class Failure(val reason: String, val status: Int = -1) : Result()
     }
@@ -493,6 +507,104 @@ object UploadPipeline {
         } finally {
             transport.runCatching { close() }
         }
+    }
+
+    // ---- Activities (CYCLING_DATA — recorded FIT files) --------------
+
+    @SuppressLint("MissingPermission")
+    suspend fun listActivities(context: Context): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, name, mac) = transportSetup
+        return try {
+            transport.open()
+            val entries = FileTransfer.listActivities(transport)
+            Result.Success(deviceName = name, deviceMac = mac, activities = entries)
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    /**
+     * Download one recorded activity by `timestamp`. Writes the FIT
+     * bytes to scoped external storage
+     * (`<getExternalFilesDir>/activities/<UTC-ISO8601>.fit`) and
+     * returns the saved path on `Success`.
+     *
+     * Filename is derived from the wire `timestamp` (epoch seconds,
+     * UTC) — matches the spirit of Python's
+     * `fit_activity.activity_filename_from_meta` without round-tripping
+     * the FIT file through a parser. The device's own
+     * `file_download.file_name`, when present, is preserved on
+     * [Result.Success.activityFileName] for callers that want to show
+     * it.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun downloadActivity(context: Context, timestamp: Long): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, name, mac) = transportSetup
+        return try {
+            transport.open()
+            val download = FileTransfer.downloadActivity(transport, timestamp)
+            val saved = saveActivityFit(context, timestamp, download.content)
+            Result.Success(
+                deviceName = name,
+                deviceMac = mac,
+                activityBytes = download.content.size,
+                activityFileName = download.fileName.takeIf { it.isNotEmpty() },
+                activitySavedPath = saved.absolutePath,
+                activityTimestamp = timestamp,
+            )
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    suspend fun deleteActivity(context: Context, timestamp: Long): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, _, _) = transportSetup
+        return try {
+            transport.open()
+            val status = FileTransfer.deleteActivity(transport, timestamp)
+            if (status == 0) Result.Success(status = status, activityTimestamp = timestamp)
+            else Result.Failure(FileTransfer.deviceStatusName(status), status)
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    suspend fun deleteAllActivities(context: Context): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, _, _) = transportSetup
+        return try {
+            transport.open()
+            val status = FileTransfer.deleteAllActivities(transport)
+            if (status == 0) Result.Success(status = status)
+            else Result.Failure(FileTransfer.deviceStatusName(status), status)
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    private fun saveActivityFit(context: Context, timestamp: Long, content: ByteArray): java.io.File {
+        // Scoped external storage — no runtime permissions needed.
+        val dir = java.io.File(context.getExternalFilesDir(null), "activities").apply { mkdirs() }
+        val nameFmt = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val fileName = "${nameFmt.format(Date(timestamp * 1000L))}.fit"
+        val out = java.io.File(dir, fileName)
+        out.writeBytes(content)
+        return out
     }
 
     // ---- Internals ----------------------------------------------------

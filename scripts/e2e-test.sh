@@ -348,6 +348,75 @@ if [ "${LIGPSPORT_TEST_DELETE_ALL:-1}" = "1" ]; then
     fi
 fi
 
+# 6. Activities verification — list, download, delete one. The
+#    BSC200 only records activities when the user actually presses
+#    Start/Stop on the device; on a freshly-paired test fixture the
+#    list may legitimately be empty. We tolerate that — the steps
+#    below only run when LIST_ACTIVITIES returns count>0.
+echo
+echo "============================================="
+echo "  Activities verification"
+echo "============================================="
+
+broadcast_and_wait LIST_ACTIVITIES 30
+ACT_COUNT=$(field "count")
+if [ -z "$ACT_COUNT" ] || [ "$ACT_COUNT" = "0" ]; then
+    echo "    no activities to verify, skipping"
+else
+    ACT_TS=$(field "a0_ts")
+    if [ -z "$ACT_TS" ]; then
+        echo "ERROR: LIST_ACTIVITIES count=$ACT_COUNT but no a0_ts present" >&2
+        echo "       line: $LAST_LINE" >&2
+        exit 7
+    fi
+    echo "    first activity ts=$ACT_TS"
+
+    broadcast_and_wait DOWNLOAD_ACTIVITY 120 --el timestamp "$ACT_TS"
+    BYTES=$(field "bytes")
+    SAVED=$(field "saved_path")
+    if [ -z "$BYTES" ] || [ "$BYTES" = "0" ] || [ -z "$SAVED" ]; then
+        echo "ERROR: DOWNLOAD_ACTIVITY missing bytes/saved_path (bytes=$BYTES saved=$SAVED)" >&2
+        echo "       line: $LAST_LINE" >&2
+        exit 8
+    fi
+    echo "    downloaded ${BYTES}B → ${SAVED}"
+
+    broadcast_and_wait DELETE_ACTIVITY 30 --el timestamp "$ACT_TS"
+    DEL_STATUS=$(field "device_status")
+    if [ "$DEL_STATUS" != "0" ]; then
+        echo "ERROR: DELETE_ACTIVITY status=$DEL_STATUS (expected 0)" >&2
+        echo "       line: $LAST_LINE" >&2
+        exit 9
+    fi
+    echo "    deleted ts=$ACT_TS ✓"
+
+    # Verify the timestamp is gone from the next LIST_ACTIVITIES.
+    broadcast_and_wait LIST_ACTIVITIES 30
+    if [[ "$LAST_LINE" == *" a0_ts=${ACT_TS} "* ]] || \
+       [[ "$LAST_LINE" == *" a0_ts=${ACT_TS}"$'\n'* ]] || \
+       [[ "$LAST_LINE" == *" a0_ts=${ACT_TS}" ]]; then
+        echo "ERROR: timestamp $ACT_TS still present after DELETE_ACTIVITY" >&2
+        echo "       line: $LAST_LINE" >&2
+        exit 10
+    fi
+    echo "    ts=$ACT_TS gone from LIST_ACTIVITIES ✓"
+fi
+
+# 7. Destructive: wipe every activity. Opt-in via env knob — the user
+#    rarely wants their real ride history nuked by a regression run.
+if [ "${LIGPSPORT_RUN_DESTRUCTIVE:-0}" = "1" ]; then
+    echo "    running destructive DELETE_ALL_ACTIVITIES"
+    broadcast_and_wait DELETE_ALL_ACTIVITIES 30 --es confirm true
+    broadcast_and_wait LIST_ACTIVITIES 30
+    AFTER_COUNT=$(field "count")
+    if [ "$AFTER_COUNT" != "0" ]; then
+        echo "ERROR: DELETE_ALL_ACTIVITIES left count=$AFTER_COUNT (expected 0)" >&2
+        echo "       line: $LAST_LINE" >&2
+        exit 11
+    fi
+    echo "    activity list empty ✓"
+fi
+
 # Note: we deliberately do NOT broadcast UNPAIR here. The pairing is
 # persisted in SharedPreferences and the user expects it to survive
 # across e2e runs (and across app restarts). To wipe it explicitly,

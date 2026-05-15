@@ -69,6 +69,10 @@ class UploadForegroundService : Service() {
                     OP_NAV_STATUS -> doNavStatus(reqId)
                     OP_SEND_AGPS -> doSendAgps(reqId)
                     OP_SEND_LOCATION -> doSendLocation(reqId)
+                    OP_LIST_ACTIVITIES -> doListActivities(reqId)
+                    OP_DOWNLOAD_ACTIVITY -> doDownloadActivity(intent, reqId)
+                    OP_DELETE_ACTIVITY -> doDeleteActivity(intent, reqId)
+                    OP_DELETE_ALL_ACTIVITIES -> doDeleteAllActivities(intent, reqId)
                     else -> AdbResult.emit(
                         action = op.ifEmpty { "UNKNOWN" },
                         reqId = reqId,
@@ -257,6 +261,115 @@ class UploadForegroundService : Service() {
         }
     }
 
+    // ---- Activities ---------------------------------------------------
+
+    private suspend fun doListActivities(reqId: String) {
+        when (val res = UploadPipeline.listActivities(this)) {
+            is UploadPipeline.Result.Success -> {
+                val extra = buildMap<String, String> {
+                    res.deviceName?.let { put("name", it) }
+                    res.deviceMac?.let { put("mac", it) }
+                    put("count", res.activities.size.toString())
+                    res.activities.forEachIndexed { i, e ->
+                        put("a${i}_ts", e.timestamp.toString())
+                        put("a${i}_size", e.fileSize.toString())
+                    }
+                }
+                AdbResult.emit("LIST_ACTIVITIES", reqId, AdbResult.Status.OK, extra)
+            }
+            is UploadPipeline.Result.Failure ->
+                AdbResult.emit("LIST_ACTIVITIES", reqId, AdbResult.Status.FAIL, reason = res.reason)
+        }
+    }
+
+    private suspend fun doDownloadActivity(intent: Intent, reqId: String) {
+        val ts = readActivityTimestamp(intent)
+        if (ts == null) {
+            AdbResult.emit(
+                "DOWNLOAD_ACTIVITY", reqId, AdbResult.Status.FAIL,
+                reason = "missing or invalid --el timestamp",
+            )
+            return
+        }
+        when (val res = UploadPipeline.downloadActivity(this, ts)) {
+            is UploadPipeline.Result.Success -> {
+                val extra = buildMap<String, String> {
+                    put("timestamp", ts.toString())
+                    res.activityBytes?.let { put("bytes", it.toString()) }
+                    res.activitySavedPath?.let { put("saved_path", it) }
+                    res.activityFileName?.let { put("file_name", it) }
+                    put("device_status", res.status.toString())
+                }
+                AdbResult.emit("DOWNLOAD_ACTIVITY", reqId, AdbResult.Status.OK, extra)
+            }
+            is UploadPipeline.Result.Failure -> {
+                val extra = buildMap<String, String> {
+                    put("timestamp", ts.toString())
+                    if (res.status >= 0) put("device_status", res.status.toString())
+                }
+                AdbResult.emit("DOWNLOAD_ACTIVITY", reqId, AdbResult.Status.FAIL, extra, reason = res.reason)
+            }
+        }
+    }
+
+    private suspend fun doDeleteActivity(intent: Intent, reqId: String) {
+        val ts = readActivityTimestamp(intent)
+        if (ts == null) {
+            AdbResult.emit(
+                "DELETE_ACTIVITY", reqId, AdbResult.Status.FAIL,
+                reason = "missing or invalid --el timestamp",
+            )
+            return
+        }
+        when (val res = UploadPipeline.deleteActivity(this, ts)) {
+            is UploadPipeline.Result.Success -> AdbResult.emit(
+                "DELETE_ACTIVITY", reqId, AdbResult.Status.OK,
+                mapOf("timestamp" to ts.toString(), "device_status" to res.status.toString()),
+            )
+            is UploadPipeline.Result.Failure -> {
+                val extra = buildMap<String, String> {
+                    put("timestamp", ts.toString())
+                    if (res.status >= 0) put("device_status", res.status.toString())
+                }
+                AdbResult.emit("DELETE_ACTIVITY", reqId, AdbResult.Status.FAIL, extra, reason = res.reason)
+            }
+        }
+    }
+
+    private suspend fun doDeleteAllActivities(intent: Intent, reqId: String) {
+        val confirm = intent.getStringExtra(EXTRA_CONFIRM)
+        if (confirm != "true") {
+            AdbResult.emit(
+                "DELETE_ALL_ACTIVITIES", reqId, AdbResult.Status.FAIL,
+                reason = "destructive — pass --es confirm true to proceed",
+            )
+            return
+        }
+        when (val res = UploadPipeline.deleteAllActivities(this)) {
+            is UploadPipeline.Result.Success -> AdbResult.emit(
+                "DELETE_ALL_ACTIVITIES", reqId, AdbResult.Status.OK,
+                mapOf("device_status" to res.status.toString()),
+            )
+            is UploadPipeline.Result.Failure -> {
+                val extra = buildMap<String, String> {
+                    if (res.status >= 0) put("device_status", res.status.toString())
+                }
+                AdbResult.emit("DELETE_ALL_ACTIVITIES", reqId, AdbResult.Status.FAIL, extra, reason = res.reason)
+            }
+        }
+    }
+
+    /**
+     * `am --el timestamp <N>` is the typed-long path. Fall back to
+     * `--es timestamp "N"` for callers that build extras programmatically
+     * — same long-vs-string fallback as readDouble().
+     */
+    private fun readActivityTimestamp(intent: Intent): Long? {
+        val l = intent.getLongExtra(EXTRA_TIMESTAMP, Long.MIN_VALUE)
+        if (l != Long.MIN_VALUE) return l
+        return intent.getStringExtra(EXTRA_TIMESTAMP)?.toLongOrNull()
+    }
+
     private fun readGpxBytes(intent: Intent): ByteArray? {
         // Preferred for the harness: base64-encoded inline GPX.
         // Sidesteps Android 11+ scoped-storage friction with /sdcard.
@@ -356,6 +469,7 @@ class UploadForegroundService : Service() {
         const val EXTRA_END_LON = "end_lon"
         const val EXTRA_PROFILE = "profile"
         const val EXTRA_CONFIRM = "confirm"
+        const val EXTRA_TIMESTAMP = "timestamp"
 
         // EXTRA_OP values.
         const val OP_PAIR = "PAIR"
@@ -368,6 +482,10 @@ class UploadForegroundService : Service() {
         const val OP_NAV_STATUS = "NAV_STATUS"
         const val OP_SEND_AGPS = "SEND_AGPS"
         const val OP_SEND_LOCATION = "SEND_LOCATION"
+        const val OP_LIST_ACTIVITIES = "LIST_ACTIVITIES"
+        const val OP_DOWNLOAD_ACTIVITY = "DOWNLOAD_ACTIVITY"
+        const val OP_DELETE_ACTIVITY = "DELETE_ACTIVITY"
+        const val OP_DELETE_ALL_ACTIVITIES = "DELETE_ALL_ACTIVITIES"
 
         fun enqueue(ctx: Context, op: String, reqId: String, intent: Intent) {
             val launchIntent = Intent(ctx, UploadForegroundService::class.java).apply {

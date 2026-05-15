@@ -91,6 +91,10 @@
                 <action android:name="de.syntaxfehler.ligpsport.action.STATUS" />
                 <action android:name="de.syntaxfehler.ligpsport.action.SEND_AGPS" />
                 <action android:name="de.syntaxfehler.ligpsport.action.SEND_LOCATION" />
+                <action android:name="de.syntaxfehler.ligpsport.action.LIST_ACTIVITIES" />
+                <action android:name="de.syntaxfehler.ligpsport.action.DOWNLOAD_ACTIVITY" />
+                <action android:name="de.syntaxfehler.ligpsport.action.DELETE_ACTIVITY" />
+                <action android:name="de.syntaxfehler.ligpsport.action.DELETE_ALL_ACTIVITIES" />
             </intent-filter>
         </receiver>
 

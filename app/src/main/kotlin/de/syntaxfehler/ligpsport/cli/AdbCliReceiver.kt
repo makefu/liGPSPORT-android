@@ -69,6 +69,18 @@ class AdbCliReceiver : BroadcastReceiver() {
             ACTION_SEND_LOCATION -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_SEND_LOCATION, intent,
             )
+            ACTION_LIST_ACTIVITIES -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_LIST_ACTIVITIES, intent,
+            )
+            ACTION_DOWNLOAD_ACTIVITY -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_DOWNLOAD_ACTIVITY, intent,
+            )
+            ACTION_DELETE_ACTIVITY -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_DELETE_ACTIVITY, intent,
+            )
+            ACTION_DELETE_ALL_ACTIVITIES -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_DELETE_ALL_ACTIVITIES, intent,
+            )
             else -> AdbResult.emit(
                 action.substringAfterLast('.').uppercase(),
                 reqId,
@@ -178,6 +190,10 @@ class AdbCliReceiver : BroadcastReceiver() {
         const val ACTION_STATUS = "de.syntaxfehler.ligpsport.action.STATUS"
         const val ACTION_SEND_AGPS = "de.syntaxfehler.ligpsport.action.SEND_AGPS"
         const val ACTION_SEND_LOCATION = "de.syntaxfehler.ligpsport.action.SEND_LOCATION"
+        const val ACTION_LIST_ACTIVITIES = "de.syntaxfehler.ligpsport.action.LIST_ACTIVITIES"
+        const val ACTION_DOWNLOAD_ACTIVITY = "de.syntaxfehler.ligpsport.action.DOWNLOAD_ACTIVITY"
+        const val ACTION_DELETE_ACTIVITY = "de.syntaxfehler.ligpsport.action.DELETE_ACTIVITY"
+        const val ACTION_DELETE_ALL_ACTIVITIES = "de.syntaxfehler.ligpsport.action.DELETE_ALL_ACTIVITIES"
 
         const val EXTRA_REQ_ID = "req_id"
     }

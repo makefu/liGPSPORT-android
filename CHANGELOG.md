@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Activities sub-section in Settings — list, download (FIT), delete recorded
+  activities from the BSC200. Delete-all guarded by a confirmation dialog.
+- adb harness actions: LIST_ACTIVITIES, DOWNLOAD_ACTIVITY, DELETE_ACTIVITY,
+  DELETE_ALL_ACTIVITIES.
+
+### Changed
+- Settings: Routes-on-device moved out of the main list into a "Routes on
+  device" sub-section that opens its own screen, alongside the new
+  Activities one.
+
 ## [1.1.0] — 2026-05-15
 
 Route editing on the map (Google-Maps-style), an in-place upload

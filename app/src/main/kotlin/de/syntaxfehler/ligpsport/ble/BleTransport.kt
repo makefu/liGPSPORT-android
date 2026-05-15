@@ -269,12 +269,24 @@ class BleTransport(
             if (rxExpected == null) {
                 if (rxBuffer.size < HEADER_SIZE) return
                 val header = rxBuffer.subList(0, HEADER_SIZE).toByteArray()
-                rxExpected = try {
+                val sized = try {
                     expectedTotalSize(header)
                 } catch (e: FrameError) {
                     Log.w(TAG, "dropping malformed header: ${e.message}")
                     rxBuffer.clear()
                     return
+                }
+                if (sized != null) {
+                    rxExpected = sized
+                } else {
+                    // file_tag=0x55 transmit-complete download (CYCLING_DATA
+                    // FILE_GET reply). The header's payload_size is bogus —
+                    // peek into the embedded file_download protobuf to learn
+                    // the real stream length. This may need more bytes than
+                    // we currently have buffered, in which case we wait
+                    // for the next notification.
+                    val total = transmitCompleteTotalSize(rxBuffer.toByteArray()) ?: return
+                    rxExpected = total
                 }
             }
             val needed = rxExpected!!

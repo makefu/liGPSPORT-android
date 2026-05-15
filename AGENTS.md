@@ -28,7 +28,7 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── LoopbackTransport.kt for Espresso tests
 │   │   │   ├── DeviceScanner.kt    name-prefix filtered BLE scan
 │   │   │   ├── DeviceStore.kt      SharedPreferences-backed paired MAC
-│   │   │   ├── FileTransfer.kt     uploadGeneralFile / startNavigation / listRoutes / navStatus / deleteRoutesById
+│   │   │   ├── FileTransfer.kt     uploadGeneralFile / startNavigation / listRoutes / navStatus / deleteRoutesById / listActivities / downloadActivity / deleteActivity / deleteAllActivities
 │   │   │   ├── AgpsClient.kt       AssistNow Online fetch (UBX-MGA payload)
 │   │   │   ├── LocationInjector.kt FACTORY GPS_COORDINATE_SET (position prior)
 │   │   │   └── UploadPipeline.kt   high-level orchestration (GPX→CNX→AGPS→seed→upload→FILE_USE)
@@ -37,7 +37,9 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   ├── ui/
 │   │   │   ├── map/MapScreen.kt              Compose map + auto-plan-on-tap
 │   │   │   ├── map/NavStatusOverlay.kt       bottom-left nav-status pill (LIST_GET poll)
-│   │   │   ├── settings/SettingsScreen.kt    paired device + router + routes-on-device + delete-all
+│   │   │   ├── settings/SettingsScreen.kt    paired device + router + Device-files sub-section rows
+│   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (sub-screen)
+│   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (sub-screen)
 │   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
 │   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
 │   │   │   └── share/                        Android share intent → CNX path
@@ -121,6 +123,10 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.MOCK_LOCATION` | inline | `--ef lat --ef lon` | `lat=`, `lon=` — sets in-process `MockLocationStore`, consulted by `PLAN_AND_UPLOAD` when no explicit start is given |
 | `…action.SEND_AGPS` | service | — | `agps_bytes=`, `device_status=` — fetches u-blox AssistNow Online and uploads as `file_type=AGPS(7)`. Token is auto-resolved from iGPSport's prod config endpoint (mirrors the official app) when `LIGPSPORT_AGPS_TOKEN` is unset; the env var overrides it when you have your own u-blox AssistNow token. Also piggybacked silently on every `UPLOAD` / `PLAN_AND_UPLOAD` (best-effort: failure doesn't fail the route) — successful piggyback shows `agps_bytes=<N>` on those RESULT lines too. |
 | `…action.SEND_LOCATION` | service | — | `seed_lat=`, `seed_lon=`, `device_status=` — injects the current location as a position prior via the FACTORY `GPS_COORDINATE_SET` op (service=11, op=8). Resolves via `MockLocationStore` → `FusedLocationProviderClient` → `lastLocation`. Also piggybacked silently on every `UPLOAD` / `PLAN_AND_UPLOAD` between the AGPS step and the route upload — successful piggyback shows `seed_lat=` + `seed_lon=` on those RESULT lines. |
+| `…action.LIST_ACTIVITIES` | service | — | `count=`, `a<N>_ts=`, `a<N>_size=` per recorded activity — `CYCLING_DATA LIST_GET` (op=1) on the third UART, gen-4 merged write. PROTOCOL.md §6.4. |
+| `…action.DOWNLOAD_ACTIVITY` | service | `--el timestamp` (long, required) | `timestamp=`, `bytes=`, `saved_path=`, `file_name=`, `device_status=` — `CYCLING_DATA FILE_GET` (op=3) with `file_tag=0x55` (TransmitCompleteCommand). Saves the FIT to `getExternalFilesDir(null)/activities/<UTC-ISO8601>.fit`. |
+| `…action.DELETE_ACTIVITY` | service | `--el timestamp` (long, required) | `timestamp=`, `device_status=` — `CYCLING_DATA FILE_DEL` (op=5) on the third UART, gen-4 merged write. Destructive. |
+| `…action.DELETE_ALL_ACTIVITIES` | service | `--es confirm true` (gate) | `device_status=` — DESTRUCTIVE; `CYCLING_DATA ALL_DEL` (op=6) merged-write on the third UART. The smali documents a split-write recipe for ALL_DEL but the live BSC200 firmware (2024-05-14) accepts only the merged form — see PROTOCOL.md §6.4 / §7.5. |
 
 ### Critical rule: BLE ops live in the foreground service, not the receiver
 
@@ -275,6 +281,11 @@ The instrumented tests + adb harness identify UI surfaces by
 | `pair_button` / `forget_button` | Pair / Forget actions in Settings |
 | `router_<id>` | One row per `RouteProvider` in Settings |
 | `upload_status` | Status text on the Upload screen |
+| `open_device_routes` / `open_device_activities` | Settings rows that open the routes / activities sub-screens |
+| `routes_list` / `refresh_routes` / `delete_all_routes` / `confirm_delete_all` | DeviceRoutesScreen surface + actions |
+| `route_<id>` / `delete_route_<id>` | Per-route row + its delete icon button (DeviceRoutesScreen) |
+| `activities_list` / `refresh_activities` / `delete_all_activities` / `confirm_delete_all_activities` | DeviceActivitiesScreen surface + actions |
+| `activity_<timestamp>` / `download_activity_<timestamp>` / `delete_activity_<timestamp>` | Per-activity row + its action icon buttons (DeviceActivitiesScreen) |
 
 ## Routing providers
 
@@ -359,6 +370,20 @@ them — they're already encoded in code.
 7. **MTU**: BSC200 negotiates 247 (BLE 4.2). We request that on
    connect and chunk at `mtu - 3` (ATT header overhead). Default falls
    back to 23 if negotiation fails.
+
+8. **CYCLING_DATA (recorded activities) lives on the third UART
+   RX (`…-7e`).** All four ops — `LIST_GET=1`, `FILE_GET=3`,
+   `FILE_DEL=5`, `ALL_DEL=6` — go out as a single gen-4 merged
+   `(head ‖ body)` write on `Channel.THIRD`. `FILE_GET` requests
+   must set `file_tag=0x55` (TransmitCompleteCommand) in the
+   20-byte head; without it the device silently ignores the
+   request. The download response is itself a transmit-complete
+   PbFrame whose `payload_size` is bogus (always `0x07A7`) and
+   whose `payload_crc` is zero — the framing layer detects the
+   `file_tag=0x55` marker and computes the real stream length
+   from the embedded `file_download` protobuf. `ALL_DEL` is
+   noted in the smali as a split-write but the live BSC200
+   firmware accepts only the merged form (PROTOCOL.md §6.4).
 
 ## Test strategy
 

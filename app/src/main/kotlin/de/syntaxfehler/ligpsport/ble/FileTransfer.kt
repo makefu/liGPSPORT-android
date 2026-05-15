@@ -21,7 +21,39 @@ object FileTransfer {
     // common.proto enum values
     private const val SERVICE_FILE_OPERATION = 21
     private const val SERVICE_ROUTE_PLAN = 7
+    private const val SERVICE_CYCLING_DATA = 6
     private const val SERVICE_OPERATE_TYPE_ADD = 3
+
+    // cycling_data.proto CYCLING_DATA_OPERATE_TYPE values. Field
+    // numbers verified against app/src/main/proto/cycling_data.proto:
+    //   LIST_GET=1, LIST_SEND=2, FILE_GET=3, FILE_SEND=4, FILE_DEL=5,
+    //   ALL_DEL=6. The migration prompt referenced FILE_GET=2 / FILE_SEND=3
+    //   — those were inaccurate; cycling_data.proto and PROTOCOL.md §6.4
+    //   both have FILE_GET=3 / FILE_SEND=4.
+    private const val CYCLING_DATA_OP_LIST_GET = 1
+    private const val CYCLING_DATA_OP_FILE_GET = 3
+    private const val CYCLING_DATA_OP_FILE_SEND = 4
+    private const val CYCLING_DATA_OP_FILE_DEL = 5
+    private const val CYCLING_DATA_OP_ALL_DEL = 6
+
+    // cycling_data_msg field numbers (verified against
+    // app/src/main/proto/cycling_data.proto):
+    //   service_type=1, cycling_data_operate_type=2,
+    //   cycling_data_file_flag_msg=3 (repeated), file_content=4,
+    //   cycling_data_auto_upload_msg=5, list_msg=6.
+    // The migration prompt named field 11 / 12 for list_msg /
+    // file_flag_msg; the .proto says 6 and 3.
+    private const val CYCLING_FIELD_SERVICE_TYPE = 1
+    private const val CYCLING_FIELD_OPERATE_TYPE = 2
+    private const val CYCLING_FIELD_FILE_FLAG_MSG = 3
+    private const val CYCLING_FIELD_LIST_MSG = 6
+
+    // cycling_data_file_flag_message fields (timestamp=1, file_size=2,
+    // user_id=3, device_id=4) — match the prompt and the .proto.
+    private const val CYC_FLAG_FIELD_TIMESTAMP = 1
+    private const val CYC_FLAG_FIELD_FILE_SIZE = 2
+    private const val CYC_FLAG_FIELD_USER_ID = 3
+    private const val CYC_FLAG_FIELD_DEVICE_ID = 4
 
     // route_plan.proto ROUTE_PLAN_OPERATE_TYPE values
     private const val ROUTE_PLAN_OP_LIST_GET = 1
@@ -614,6 +646,361 @@ object FileTransfer {
         // file_extension (field 7, length-delimited)
         writeStringField(out, 7, fileExtension)
         return out.toByteArray()
+    }
+
+    // ====================================================================
+    // CYCLING_DATA — recorded activities (FIT files on the BSC200).
+    //
+    // Mirrors ligpsport (Python) v1.5.0's ``file_transfer.list_activities``
+    // / ``download_activity`` / ``delete_activity`` / ``delete_all_activities``.
+    // PROTOCOL.md §6.4 + §7.5 cover the wire spec; the on-device path is
+    // service=CYCLING_DATA(6) on the third UART RX (`…-7e`), with a
+    // gen-4 merged ``head ‖ body`` write for every op.
+    // ====================================================================
+
+    /** One entry in a CYCLING_DATA `LIST_GET` reply. */
+    data class ActivityListEntry(
+        val timestamp: Long,
+        val fileSize: Long,
+        val userId: String,
+        val deviceId: String,
+    )
+
+    /** Result of [downloadActivity] — the FIT file bytes plus the
+     *  metadata the device echoes back in the embedded
+     *  `file_download` protobuf. */
+    data class ActivityDownload(
+        val content: ByteArray,
+        val fileSize: Long,
+        val fileId: Long,
+        val fileName: String,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (other !is ActivityDownload) return false
+            return content.contentEquals(other.content) &&
+                fileSize == other.fileSize &&
+                fileId == other.fileId &&
+                fileName == other.fileName
+        }
+        override fun hashCode(): Int {
+            var r = content.contentHashCode()
+            r = 31 * r + fileSize.hashCode()
+            r = 31 * r + fileId.hashCode()
+            r = 31 * r + fileName.hashCode()
+            return r
+        }
+    }
+
+    /**
+     * List the recorded activities on the device.
+     *
+     * Sends `cycling_data_msg{service_type=CYCLING_DATA, op=LIST_GET,
+     * list_msg{file_index_start, file_index_end}}` on the third UART
+     * (gen-4 merged write). Decodes the reply's repeated
+     * `cycling_data_file_flag_message` entries; the BSC200 firmware
+     * pads the response with all-zero placeholders up to
+     * `file_list_support_num_max` — this helper drops them.
+     */
+    suspend fun listActivities(
+        transport: Transport,
+        fileIndexStart: Int = 0,
+        fileIndexEnd: Int = 100,
+        timeoutMs: Long = 10_000,
+    ): List<ActivityListEntry> {
+        val body = buildCyclingDataListGetPb(fileIndexStart, fileIndexEnd)
+        val head = buildCyclingDataHead(body, op = CYCLING_DATA_OP_LIST_GET, fileTag = FILE_TAG_DEFAULT)
+        val merged = head + body
+
+        val filtered = transport.frames().mapNotNull { rf ->
+            val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
+            parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
+        }
+        transport.send(merged, Channel.THIRD)
+        val ack: Frame = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() } ?: run {
+            Log.w(TAG, "list-activities timed out")
+            return emptyList()
+        }
+        if (ack.payload.isEmpty()) {
+            Log.i(TAG, "list-activities: confirm-only reply, status=${ack.status}")
+            return emptyList()
+        }
+        return decodeActivityListResponse(ack.payload)
+    }
+
+    /**
+     * Download one activity by `timestamp`. The device replies with a
+     * single transmit-complete (file_tag=0x55) PB frame whose payload
+     * is `[BE-u32 pb_size | file_download pb | file bytes]`. The
+     * framing layer's reassembler hands us the whole envelope as
+     * `frame.payload`; we just split it out here.
+     */
+    suspend fun downloadActivity(
+        transport: Transport,
+        timestamp: Long,
+        timeoutMs: Long = 60_000,
+    ): ActivityDownload {
+        val body = buildCyclingDataFileFlagPb(
+            op = CYCLING_DATA_OP_FILE_GET,
+            timestamp = timestamp,
+        )
+        val head = buildCyclingDataHead(
+            body,
+            op = CYCLING_DATA_OP_FILE_GET,
+            fileTag = FILE_TAG_TRANSMIT_COMPLETE,
+        )
+        val merged = head + body
+
+        val filtered = transport.frames().mapNotNull { rf ->
+            val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
+            parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
+        }
+        transport.send(merged, Channel.THIRD)
+        val ack: Frame = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
+            ?: throw IllegalStateException("activity FILE_GET: no reply within ${timeoutMs}ms")
+        if (ack.operation != CYCLING_DATA_OP_FILE_SEND) {
+            throw IllegalStateException(
+                "activity FILE_GET: expected FILE_SEND reply, got op=${ack.operation}",
+            )
+        }
+        return parseActivityDownloadPayload(ack.payload)
+    }
+
+    /**
+     * Delete one activity by `timestamp` (destructive). Returns the
+     * device's `DeviceReturnStatus` byte (0 = success).
+     */
+    suspend fun deleteActivity(
+        transport: Transport,
+        timestamp: Long,
+        timeoutMs: Long = 10_000,
+    ): Int {
+        val body = buildCyclingDataFileFlagPb(
+            op = CYCLING_DATA_OP_FILE_DEL,
+            timestamp = timestamp,
+        )
+        val head = buildCyclingDataHead(body, op = CYCLING_DATA_OP_FILE_DEL, fileTag = FILE_TAG_DEFAULT)
+        val merged = head + body
+
+        val filtered = transport.frames().mapNotNull { rf ->
+            val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
+            parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
+        }
+        transport.send(merged, Channel.THIRD)
+        val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
+        val status = ack?.status ?: -1
+        Log.i(TAG, "delete-activity ts=$timestamp → status=$status")
+        return status
+    }
+
+    /**
+     * Delete every recorded activity (destructive). Returns the
+     * device's status byte. Note: the smali claims a split-write
+     * pattern for ALL_DEL, but PROTOCOL.md §6.4 documents that the
+     * live BSC200 firmware (2024-05-14) accepts only the gen-4 merged
+     * (head ‖ body) write here — the split form returns
+     * `status=1` (DataError). Use the merged form only.
+     */
+    suspend fun deleteAllActivities(
+        transport: Transport,
+        timeoutMs: Long = 15_000,
+    ): Int {
+        val body = buildCyclingDataAllDelPb()
+        val head = buildCyclingDataHead(body, op = CYCLING_DATA_OP_ALL_DEL, fileTag = FILE_TAG_DEFAULT)
+        val merged = head + body
+
+        val filtered = transport.frames().mapNotNull { rf ->
+            val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
+            parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
+        }
+        transport.send(merged, Channel.THIRD)
+        val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
+        val status = ack?.status ?: -1
+        Log.i(TAG, "delete-all-activities → status=$status")
+        return status
+    }
+
+    /**
+     * Hand-decode the `cycling_data_msg` LIST_GET reply, picking
+     * the repeated `cycling_data_file_flag_msg` entries (field 3).
+     * Drops zero-padded placeholders so callers see real activities
+     * only.
+     */
+    internal fun decodeActivityListResponse(payload: ByteArray): List<ActivityListEntry> {
+        val out = mutableListOf<ActivityListEntry>()
+        val reader = ProtoReader(payload)
+        while (reader.hasMore()) {
+            val tag = reader.readVarint().toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            if (field == CYCLING_FIELD_FILE_FLAG_MSG && wire == 2) {
+                val len = reader.readVarint().toInt()
+                val bytes = reader.readBytes(len)
+                val entry = decodeActivityFlag(bytes)
+                if (entry.timestamp != 0L || entry.fileSize != 0L) out.add(entry)
+            } else {
+                reader.skip(wire)
+            }
+        }
+        return out
+    }
+
+    private fun decodeActivityFlag(payload: ByteArray): ActivityListEntry {
+        var ts = 0L
+        var size = 0L
+        var userId = ""
+        var deviceId = ""
+        val reader = ProtoReader(payload)
+        while (reader.hasMore()) {
+            val tag = reader.readVarint().toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            when {
+                field == CYC_FLAG_FIELD_TIMESTAMP && wire == 0 -> ts = reader.readVarint()
+                field == CYC_FLAG_FIELD_FILE_SIZE && wire == 0 -> size = reader.readVarint()
+                field == CYC_FLAG_FIELD_USER_ID && wire == 2 -> userId = reader.readString()
+                field == CYC_FLAG_FIELD_DEVICE_ID && wire == 2 -> deviceId = reader.readString()
+                else -> reader.skip(wire)
+            }
+        }
+        return ActivityListEntry(timestamp = ts, fileSize = size, userId = userId, deviceId = deviceId)
+    }
+
+    /**
+     * Split the FILE_GET reply payload into its three parts:
+     *   `[4B BE pb_size | file_download protobuf | file bytes]`.
+     * Visible for testing.
+     */
+    internal fun parseActivityDownloadPayload(payload: ByteArray): ActivityDownload {
+        if (payload.size < 4) {
+            throw IllegalStateException(
+                "activity FILE_GET: reply payload too short (${payload.size} bytes)",
+            )
+        }
+        val pbSize = ((payload[0].toInt() and 0xFF) shl 24) or
+            ((payload[1].toInt() and 0xFF) shl 16) or
+            ((payload[2].toInt() and 0xFF) shl 8) or
+            (payload[3].toInt() and 0xFF)
+        val pbStart = 4
+        val pbEnd = pbStart + pbSize
+        if (payload.size < pbEnd) {
+            throw IllegalStateException(
+                "activity FILE_GET: pb_size=$pbSize exceeds payload (${payload.size})",
+            )
+        }
+        val info = decodeFileDownloadInfo(payload.copyOfRange(pbStart, pbEnd))
+        val fileEnd = pbEnd + info.fileSize.toInt()
+        if (payload.size < fileEnd) {
+            throw IllegalStateException(
+                "activity FILE_GET: short payload ${payload.size} < $fileEnd",
+            )
+        }
+        return ActivityDownload(
+            content = payload.copyOfRange(pbEnd, fileEnd),
+            fileSize = info.fileSize,
+            fileId = info.fileId,
+            fileName = info.fileName,
+        )
+    }
+
+    private data class FileDownloadInfo(val fileSize: Long, val fileId: Long, val fileName: String)
+
+    private fun decodeFileDownloadInfo(pb: ByteArray): FileDownloadInfo {
+        var fileSize = 0L
+        var fileId = 0L
+        var fileName = ""
+        val reader = ProtoReader(pb)
+        while (reader.hasMore()) {
+            val tag = reader.readVarint().toInt()
+            val field = tag ushr 3
+            val wire = tag and 7
+            when {
+                // file_download.proto: file_size=1, file_type=2, file_id=3, file_name=4
+                field == 1 && wire == 0 -> fileSize = reader.readVarint()
+                field == 3 && wire == 0 -> fileId = reader.readVarint()
+                field == 4 && wire == 2 -> fileName = reader.readString()
+                else -> reader.skip(wire)
+            }
+        }
+        return FileDownloadInfo(fileSize, fileId, fileName)
+    }
+
+    /**
+     * `cycling_data_msg{service_type=CYCLING_DATA, op=LIST_GET,
+     *  list_msg{file_index_start, file_index_end}}`. Visible for
+     *  testing.
+     */
+    internal fun buildCyclingDataListGetPb(start: Int, end: Int): ByteArray {
+        val rangePb = ByteArrayOutputStream().apply {
+            // file_list_get_message.file_index_start (field 3, varint)
+            writeVarintField(this, 3, 0); writeVarint(this, start.toLong())
+            // file_list_get_message.file_index_end (field 4, varint)
+            writeVarintField(this, 4, 0); writeVarint(this, end.toLong())
+        }.toByteArray()
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, CYCLING_FIELD_SERVICE_TYPE, 0); writeVarint(out, SERVICE_CYCLING_DATA.toLong())
+        writeVarintField(out, CYCLING_FIELD_OPERATE_TYPE, 0); writeVarint(out, CYCLING_DATA_OP_LIST_GET.toLong())
+        out.write((CYCLING_FIELD_LIST_MSG shl 3) or 2)
+        writeVarint(out, rangePb.size.toLong())
+        out.write(rangePb)
+        return out.toByteArray()
+    }
+
+    /**
+     * `cycling_data_msg{service_type=CYCLING_DATA, op=<op>,
+     *  cycling_data_file_flag_msg=[{timestamp}]}`. Used by FILE_GET
+     *  and FILE_DEL. Visible for testing.
+     */
+    internal fun buildCyclingDataFileFlagPb(op: Int, timestamp: Long): ByteArray {
+        val flagPb = ByteArrayOutputStream().apply {
+            writeVarintField(this, CYC_FLAG_FIELD_TIMESTAMP, 0); writeVarint(this, timestamp)
+        }.toByteArray()
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, CYCLING_FIELD_SERVICE_TYPE, 0); writeVarint(out, SERVICE_CYCLING_DATA.toLong())
+        writeVarintField(out, CYCLING_FIELD_OPERATE_TYPE, 0); writeVarint(out, op.toLong())
+        out.write((CYCLING_FIELD_FILE_FLAG_MSG shl 3) or 2)
+        writeVarint(out, flagPb.size.toLong())
+        out.write(flagPb)
+        return out.toByteArray()
+    }
+
+    /**
+     * `cycling_data_msg{service_type=CYCLING_DATA, op=ALL_DEL}` —
+     * just the two header fields; ALL_DEL doesn't carry a file
+     * selector. Visible for testing.
+     */
+    internal fun buildCyclingDataAllDelPb(): ByteArray {
+        val out = ByteArrayOutputStream()
+        writeVarintField(out, CYCLING_FIELD_SERVICE_TYPE, 0); writeVarint(out, SERVICE_CYCLING_DATA.toLong())
+        writeVarintField(out, CYCLING_FIELD_OPERATE_TYPE, 0); writeVarint(out, CYCLING_DATA_OP_ALL_DEL.toLong())
+        return out.toByteArray()
+    }
+
+    /**
+     * 20-byte PbFrame head for a CYCLING_DATA service request.
+     * Mirrors the Python helper in ligpsport/file_transfer.py:
+     * service byte = CYCLING_DATA(6); operation byte = the op number;
+     * file_tag is `0x55` for FILE_GET (TRANSMIT_COMPLETE), `0xFF`
+     * everywhere else. Visible for testing.
+     */
+    internal fun buildCyclingDataHead(body: ByteArray, op: Int, fileTag: Int): ByteArray {
+        val head = ByteArray(HEADER_SIZE)
+        head[HDR_TYPE] = TYPE_PB.toByte()
+        head[HDR_SERVICE] = (SERVICE_CYCLING_DATA and 0xFF).toByte()
+        head[HDR_SUB_SERVICE] = RESERVED_BYTE.toByte()
+        head[HDR_FILE_TAG] = (fileTag and 0xFF).toByte()
+        head[HDR_OPERATION] = (op and 0xFF).toByte()
+        head[HDR_SUB_OPERATION] = RESERVED_BYTE.toByte()
+        head[HDR_RESERVED_6] = RESERVED_BYTE.toByte()
+        head[HDR_PAYLOAD_SIZE] = ((body.size shr 8) and 0xFF).toByte()
+        head[HDR_PAYLOAD_SIZE + 1] = (body.size and 0xFF).toByte()
+        head[HDR_PAYLOAD_CRC] = crc8(body).toByte()
+        head[HDR_END_MARKER] = TYPE_PB.toByte()
+        for (off in HDR_RESERVED_PAD until HDR_RESERVED_PAD + RESERVED_PAD_LENGTH) {
+            head[off] = RESERVED_BYTE.toByte()
+        }
+        head[HDR_HEADER_CRC] = crc8(head, 0, HDR_HEADER_CRC).toByte()
+        return head
     }
 
     private fun writeVarintField(out: ByteArrayOutputStream, fieldNumber: Int, wireType: Int) {

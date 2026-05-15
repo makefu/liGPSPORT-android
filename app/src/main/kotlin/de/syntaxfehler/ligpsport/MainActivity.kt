@@ -13,6 +13,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import de.syntaxfehler.ligpsport.ui.map.MapScreen
 import de.syntaxfehler.ligpsport.ui.pairing.PairingScreen
+import de.syntaxfehler.ligpsport.ui.settings.DeviceActivitiesScreen
+import de.syntaxfehler.ligpsport.ui.settings.DeviceRoutesScreen
 import de.syntaxfehler.ligpsport.ui.settings.SettingsScreen
 import de.syntaxfehler.ligpsport.ui.theme.LigpsportTheme
 
@@ -48,7 +50,15 @@ private fun AppNav() {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onOpenPairing = { nav.navigate("pairing") },
+                onOpenRoutes = { nav.navigate("settings/routes") },
+                onOpenActivities = { nav.navigate("settings/activities") },
             )
+        }
+        composable("settings/routes") {
+            DeviceRoutesScreen(onBack = { nav.popBackStack() })
+        }
+        composable("settings/activities") {
+            DeviceActivitiesScreen(onBack = { nav.popBackStack() })
         }
         composable("pairing") {
             PairingScreen(
