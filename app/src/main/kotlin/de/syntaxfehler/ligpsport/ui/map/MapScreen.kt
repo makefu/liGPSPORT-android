@@ -20,7 +20,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.LocationOn
@@ -431,6 +430,37 @@ fun MapScreen(
                 .padding(end = 16.dp, bottom = 24.dp),
         )
 
+        // Auto-plan whenever the destination changes and we have a GPS
+        // fix. The Plan button is gone — tapping a point on the map (or
+        // picking a search result) is the user's commitment to a
+        // destination, and a route preview is the immediate feedback. The
+        // user still has a chance to back out before Upload.
+        LaunchedEffect(destination, currentLocation) {
+            val dest = destination ?: return@LaunchedEffect
+            if (plannedGpx != null) return@LaunchedEffect
+            val start = currentLocation ?: run {
+                statusMessage = "Waiting for GPS fix…"
+                return@LaunchedEffect
+            }
+            val provider = RouterRegistry.byId(RouterPreferences(ctx).get())
+                ?: RouterRegistry.default
+            statusMessage = "Planning route via ${provider.displayName}…"
+            planningRoute = true
+            try {
+                val end = Point(dest.lat, dest.lon)
+                val gpx = withContext(Dispatchers.IO) { provider.planGpx(start, end) }
+                clearRouteOverlay(mapView)
+                drawRoute(mapView, gpx)
+                RouteSessionStore.setPlannedGpx(gpx)
+                plannedGpx = gpx
+                statusMessage = "Route ready — tap Upload to send."
+            } catch (e: Exception) {
+                statusMessage = "Routing failed: ${e.message}"
+            } finally {
+                planningRoute = false
+            }
+        }
+
         // Bottom card appears as soon as a destination is set.
         destination?.let { dest ->
             DestinationCard(
@@ -442,37 +472,6 @@ fun MapScreen(
                     plannedGpx = null
                     statusMessage = null
                     clearDestination(mapView)
-                },
-                onPlan = onPlan@{
-                    val start = currentLocation
-                    if (start == null) {
-                        statusMessage = "Waiting for GPS fix… tap Plan again in a moment."
-                        return@onPlan
-                    }
-                    val provider = RouterRegistry.byId(RouterPreferences(ctx).get())
-                        ?: RouterRegistry.default
-                    statusMessage = "Planning route via ${provider.displayName}…"
-                    planningRoute = true
-                    scope.launch {
-                        try {
-                            val end = Point(dest.lat, dest.lon)
-                            val gpx = withContext(Dispatchers.IO) {
-                                provider.planGpx(start, end)
-                            }
-                            clearRouteOverlay(mapView)
-                            drawRoute(mapView, gpx)
-                            // Persist the planned GPX so the polyline
-                            // survives a round-trip via the upload
-                            // screen (issue: "back to map loses route").
-                            RouteSessionStore.setPlannedGpx(gpx)
-                            plannedGpx = gpx
-                            statusMessage = "Route ready — tap Upload to send."
-                        } catch (e: Exception) {
-                            statusMessage = "Routing failed: ${e.message}"
-                        } finally {
-                            planningRoute = false
-                        }
-                    }
                 },
                 onUpload = onUpload@{
                     val gpx = plannedGpx ?: return@onUpload
@@ -579,7 +578,6 @@ private fun DestinationCard(
     planning: Boolean,
     hasPlan: Boolean,
     onClear: () -> Unit,
-    onPlan: () -> Unit,
     onUpload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -614,34 +612,22 @@ private fun DestinationCard(
                     Icon(Icons.Default.Cancel, contentDescription = "Clear destination")
                 }
             }
-            // Plan + Upload as two steps. Plan is the action that
-            // costs network/CPU and must run before the user commits to
-            // sending; Upload only navigates on to the BLE pipeline
-            // once a plan exists. Keeping them separate lets the user
-            // re-plan (e.g. switch routers in Settings) without
-            // accidentally uploading the previous route.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(
-                    onClick = onPlan,
-                    enabled = !planning,
-                    modifier = Modifier.weight(1f).testTag("plan_button"),
-                ) {
-                    if (planning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp).padding(end = 4.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Text("Planning…")
-                    } else {
-                        Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = null)
-                        Text(if (hasPlan) "  Re-plan" else "  Plan")
-                    }
-                }
-                FilledTonalButton(
-                    onClick = onUpload,
-                    enabled = hasPlan && !planning,
-                    modifier = Modifier.weight(1f).testTag("upload_button"),
-                ) {
+            // Single Upload button — planning happens automatically as
+            // soon as the user picks a destination. The button shows a
+            // spinner while the route is still being computed and stays
+            // disabled until a plan is ready.
+            FilledTonalButton(
+                onClick = onUpload,
+                enabled = hasPlan && !planning,
+                modifier = Modifier.fillMaxWidth().testTag("upload_button"),
+            ) {
+                if (planning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text("Planning…")
+                } else {
                     Icon(Icons.Default.CloudUpload, contentDescription = null)
                     Text("  Upload")
                 }

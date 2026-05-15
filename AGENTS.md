@@ -28,11 +28,19 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── LoopbackTransport.kt for Espresso tests
 │   │   │   ├── DeviceScanner.kt    name-prefix filtered BLE scan
 │   │   │   ├── DeviceStore.kt      SharedPreferences-backed paired MAC
-│   │   │   ├── FileTransfer.kt     uploadGeneralFile / deleteRoute / listRoutes
-│   │   │   └── UploadPipeline.kt   high-level orchestration (GPX→CNX→upload)
-│   │   ├── route/                  GPX parser, CNX encoder, BRouter client
+│   │   │   ├── FileTransfer.kt     uploadGeneralFile / startNavigation / listRoutes / navStatus / deleteRoutesById
+│   │   │   ├── AgpsClient.kt       AssistNow Online fetch (UBX-MGA payload)
+│   │   │   ├── LocationInjector.kt FACTORY GPS_COORDINATE_SET (position prior)
+│   │   │   └── UploadPipeline.kt   high-level orchestration (GPX→CNX→AGPS→seed→upload→FILE_USE)
+│   │   ├── route/                  GPX parser, CNX encoder, pluggable RouteProvider (brouter / osrm / straightline)
 │   │   ├── search/PhotonClient.kt  type-ahead geocoder
-│   │   ├── ui/                     Compose screens (map, pairing, upload, share)
+│   │   ├── ui/
+│   │   │   ├── map/MapScreen.kt              Compose map + auto-plan-on-tap
+│   │   │   ├── map/NavStatusOverlay.kt       bottom-left nav-status pill (LIST_GET poll)
+│   │   │   ├── settings/SettingsScreen.kt    paired device + router + routes-on-device + delete-all
+│   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
+│   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
+│   │   │   └── share/                        Android share intent → CNX path
 │   │   ├── cli/                    adb broadcast hooks (AdbCliReceiver, AdbResult)
 │   │   └── service/UploadForegroundService.kt   worker for BLE ops
 │   ├── src/test/                   JVM unit tests (framing, CRC, CNX, GPX)
@@ -101,11 +109,13 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.PAIR` | service | — | `name=`, `mac=` |
 | `…action.UNPAIR` | inline | — | — |
 | `…action.STATUS` | inline | — | `bt_enabled=`, `paired_mac=`, `paired_name=` |
-| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `device_status=` |
+| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `nav_started=` (true/false), `device_status=` |
 | `…action.PLAN_AND_UPLOAD` | service | `--ef end_lat,end_lon` (required); `--ef start_lat,start_lon` optional — if absent, the service resolves current location via `MockLocationStore` → `FusedLocationProviderClient.getCurrentLocation` → `lastLocation`; optional `--es profile`, `--el file_id`, `--es name` | `provider=` (which router was used), plus all UPLOAD keys |
 | `…action.LIST_ROUTES` | service | — | `count=`, `r<N>_id=`, `r<N>_name=`, `r<N>_dist_m=` |
-| `…action.DELETE_ROUTE` | service | `--el file_id`; optional `--es ext` (default `cnx`) | `file_id=`, `device_status=` |
-| `…action.DELETE_ALL_ROUTES` | service | `--es confirm true` (gate) | `device_status=` — DESTRUCTIVE, wipes ROUTE_PLAN storage via `FILES_DEL` op=6 |
+| `…action.NAV_STATUS` | service | — | `is_navigating=true\|false`, `active_route_id=`, `active_route_name=` — reads `ROUTE_PLAN LIST_GET` and scans for `enum_USED_STATUS = 1` (PROTOCOL.md §7.3). `DEV_STATUS.navi_status` is documented but never populated by BSC200 firmware; the LIST_GET route-status byte is the only honest signal. |
+| `…action.DELETE_ROUTE` | service | `--el file_id`; optional `--es ext` (default `cnx`) | `file_id=`, `device_status=` — single-id delete via `FILE_DEL` (op=3) on the control channel. |
+| `…action.DELETE_ROUTE_BY_ID` | service | `--el file_id`; optional `--es name`, `--es ext` (default `cnx`) | `file_id=`, `device_status=` — single-id delete via the v1.2.0 `FILES_DEL` (op=6) merged-write path. Used by the Settings → Routes-on-device row delete; works on inactive routes only (active route is firmware-protected per PROTOCOL.md §7.4). |
+| `…action.DELETE_ALL_ROUTES` | service | `--es confirm true` (gate) | `device_status=` — DESTRUCTIVE; LIST_GETs the device's routes, then issues `FILES_DEL` (op=6) with `line_id` + full `route_plan_info_msg` for every target on the FOURTH characteristic as a single merged write. Active route remains (firmware-protected). |
 | `…action.SET_ROUTER` | inline | `--es id <brouter\|osrm\|straightline>` | `id=` |
 | `…action.LIST_ROUTERS` | inline | — | `count=`, `current=`, per-router `r<N>_id=`, `r<N>_name=`, `r<N>_offline=` |
 | `…action.MOCK_LOCATION` | inline | `--ef lat --ef lon` | `lat=`, `lon=` — sets in-process `MockLocationStore`, consulted by `PLAN_AND_UPLOAD` when no explicit start is given |
@@ -156,37 +166,54 @@ broadcasts in the system and nukes context useful for debugging.
             ┌──────────│  Map    │──────────┐
             │          └─────────┘          │
             │            │   │              │
-            │  destination &  │ gear FAB    │ [Plan]→draw polyline
-            │  GPX persisted  ▼              │ [Upload]→nav to Upload
-            │  in RouteSessionStore   ┌──────────┐
-            │                         │ Settings │
-            │                         └──────────┘
-            ▼                              │
-        ┌────────┐  ◀── pop ◀──── ┌────────────┐
-        │ Upload │                │  Pairing   │
-        │(auto)  │                │ (auto pop  │
-        └────────┘                │  on pick)  │
-                                  └────────────┘
+            │ tap/search ▼   │ gear FAB     │
+            │  → auto-plan   │              │
+            │  → polyline    ▼              │
+            │             ┌──────────┐
+            │  GPX in     │ Settings │
+            │  Session-   └──────────┘
+            │  Store           │
+            ▼                  │
+        ┌────────┐  ◀──── pop ◀──── ┌────────────┐
+        │ Upload │ (auto BLE run)   │  Pairing   │
+        │(auto)  │                  │ (auto pop  │
+        └────────┘                  │  on pick)  │
+                                    └────────────┘
 ```
 
-### Map: two-step Plan → Upload
+### Map: tap → auto-plan → Upload
 
-The destination card surfaces **two distinct buttons**, never one
-combined "Plan & upload":
+The destination card surfaces **one button — Upload**. Planning
+happens automatically as soon as the user picks a destination
+(map-tap or search result) — there is no separate "Plan" button:
 
-- **Plan** runs the configured `RouteProvider`, draws the polyline,
-  stores the GPX in `RouteSessionStore.plannedGpx`, and flips the
-  Upload button to enabled. Re-tapping says "Re-plan" — useful after
-  switching routers in Settings.
-- **Upload** is disabled until a plan exists. Tapping navigates to
-  the Upload screen with the planned GPX. Splitting these two
-  actions prevents the failure mode where a user commits to a BLE
-  upload (a costly, ~30 s operation) before seeing the suggested
-  route on the map.
+- A `LaunchedEffect(destination, currentLocation)` kicks off the
+  configured `RouteProvider`, draws the polyline on the MapView, and
+  stores the GPX in `RouteSessionStore.plannedGpx`. The Upload
+  button shows a spinner labelled "Planning…" while this runs.
+- Once planning is complete, the Upload button enables and reads
+  "Upload". Tapping it navigates to the Upload screen and the BLE
+  pipeline auto-runs (paired-device check, AGPS+location seed,
+  CNX upload, FILE_USE).
 
 When the destination changes (search-pick, map-tap, or X-clear), the
 previous plan is dropped: `plannedGpx = null` + `Polyline` overlays
-are removed from the MapView. Upload disables itself again.
+are removed from the MapView. The auto-plan effect re-fires with the
+new destination.
+
+### Auto-start navigation after upload
+
+Every successful `UploadPipeline.uploadGpx` issues a follow-up
+`FileTransfer.startNavigation` (`ROUTE_PLAN FILE_USE`, op=5) once the
+device acks the chunked upload. This mirrors the iGPSPORT app's
+"send and use" flow (`RoadBookSearchActivity.sendFileToDevice` →
+`IGPDeviceManager.setRoutePlanFile`). The wire format is the gen-4
+single merged write of (20-byte head ‖ protobuf body) on the
+FOURTH characteristic, *not* the body/header split across two
+characteristics — see PROTOCOL.md §7.2 for the byte-for-byte
+reference and the smali source. Failure is non-fatal (the upload
+itself still counts as success); the result line surfaces
+`nav_started=true|false` either way.
 
 ### Other UX invariants
 

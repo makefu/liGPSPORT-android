@@ -286,6 +286,68 @@ for ROUTER_ID in $ROUTERS; do
     broadcast_and_wait DELETE_ROUTE 30 --el file_id "$FILE_ID" --es ext cnx
 done
 
+# 5. DELETE_ALL_ROUTES verification. Upload two routes, then issue
+#    DELETE_ALL_ROUTES and confirm the inactive route is actually gone
+#    from the device (LIST_GET no longer returns its id). PROTOCOL.md
+#    §7.4 firmware-protects the *active* route — the last upload's
+#    auto-FILE_USE makes that one stick around, but the earlier upload
+#    is the canonical "inactive route" the FILES_DEL wipe is supposed
+#    to clear.
+if [ "${LIGPSPORT_TEST_DELETE_ALL:-1}" = "1" ]; then
+    echo
+    echo "============================================="
+    echo "  DELETE_ALL_ROUTES verification"
+    echo "============================================="
+
+    # Use whichever router was tested last — it's already configured.
+    broadcast_and_wait MOCK_LOCATION 5 --ef lat "$START_LAT" --ef lon "$START_LON"
+
+    DA_FID1=$(( $(date +%s) + 100 ))
+    DA_FID2=$(( DA_FID1 + 1 ))
+    echo "    seeding 2 routes for delete-all test (ids=$DA_FID1, $DA_FID2)"
+
+    broadcast_and_wait PLAN_AND_UPLOAD 240 \
+        --ef end_lat "$END_LAT" \
+        --ef end_lon "$END_LON" \
+        --el file_id "$DA_FID1" \
+        --es name "del-all-1"
+    broadcast_and_wait PLAN_AND_UPLOAD 240 \
+        --ef end_lat "$END_LAT" \
+        --ef end_lon "$END_LON" \
+        --el file_id "$DA_FID2" \
+        --es name "del-all-2"
+
+    # Sanity: both routes show up in LIST_GET. The BSC200 returns an
+    # empty list when the request omits the index range — we depend
+    # on the v1.2.0 LIST_GET wire format here.
+    broadcast_and_wait LIST_ROUTES 15
+    LIST_LINE="$LAST_LINE"
+    if [[ "$LIST_LINE" != *"$DA_FID1"* ]] || [[ "$LIST_LINE" != *"$DA_FID2"* ]]; then
+        echo "ERROR: LIST_ROUTES missing seeded ids ($DA_FID1 and/or $DA_FID2)" >&2
+        echo "       line: $LIST_LINE" >&2
+        exit 5
+    fi
+    echo "    seeded ids visible in LIST_GET ✓"
+
+    # Wipe.
+    broadcast_and_wait DELETE_ALL_ROUTES 30 --es confirm true
+
+    # Verify the *inactive* route (DA_FID1) is gone. The active route
+    # (DA_FID2 — last upload's FILE_USE made it active) is firmware-
+    # protected; FILES_DEL acks status=0 but the route stays.
+    broadcast_and_wait LIST_ROUTES 15
+    LIST_AFTER="$LAST_LINE"
+    if [[ "$LIST_AFTER" == *"$DA_FID1"* ]]; then
+        echo "ERROR: inactive route $DA_FID1 still present after DELETE_ALL_ROUTES" >&2
+        echo "       line: $LIST_AFTER" >&2
+        exit 6
+    fi
+    echo "    inactive route $DA_FID1 gone ✓"
+    if [[ "$LIST_AFTER" == *"$DA_FID2"* ]]; then
+        echo "    active route $DA_FID2 retained (firmware-protected; expected) ✓"
+    fi
+fi
+
 # Note: we deliberately do NOT broadcast UNPAIR here. The pairing is
 # persisted in SharedPreferences and the user expects it to survive
 # across e2e runs (and across app restarts). To wipe it explicitly,

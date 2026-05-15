@@ -154,6 +154,8 @@ private fun DeviceRoutesSection(paired: Boolean) {
     var routes by remember { mutableStateOf<List<FileTransfer.RouteEntry>>(emptyList()) }
     var pendingDelete by remember { mutableStateOf<FileTransfer.RouteEntry?>(null) }
     var pendingDeleting by remember { mutableStateOf(false) }
+    var confirmDeleteAll by remember { mutableStateOf(false) }
+    var deletingAll by remember { mutableStateOf(false) }
 
     fun refresh() {
         if (!paired) return
@@ -241,8 +243,69 @@ private fun DeviceRoutesSection(paired: Boolean) {
                         onDelete = { pendingDelete = r },
                     )
                 }
+                OutlinedButton(
+                    onClick = { confirmDeleteAll = true },
+                    enabled = !deletingAll && !loading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .testTag("delete_all_routes"),
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Text("  Delete all routes")
+                }
             }
         }
+    }
+
+    if (confirmDeleteAll) {
+        AlertDialog(
+            onDismissRequest = { if (!deletingAll) confirmDeleteAll = false },
+            title = { Text("Delete all routes?") },
+            text = {
+                Column {
+                    Text(
+                        "This removes every inactive route from the BSC200.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (routes.any { it.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED }) {
+                        Text(
+                            "The active navigation route is firmware-protected and will " +
+                                "stay on the device — stop navigation on the BSC200 first " +
+                                "if you want to remove it too.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !deletingAll,
+                    onClick = {
+                        deletingAll = true
+                        scope.launch {
+                            val res = withContext(Dispatchers.IO) {
+                                UploadPipeline.deleteAllRoutes(ctx)
+                            }
+                            deletingAll = false
+                            confirmDeleteAll = false
+                            when (res) {
+                                is UploadPipeline.Result.Success -> refresh()
+                                is UploadPipeline.Result.Failure -> error = res.reason
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("confirm_delete_all"),
+                ) { Text("Delete all") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !deletingAll,
+                    onClick = { confirmDeleteAll = false },
+                ) { Text("Cancel") }
+            },
+        )
     }
 
     val target = pendingDelete

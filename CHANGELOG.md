@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-05-15
+
+**MVP release.** A complete clean-room Android client for the iGPSPORT
+BSC200 cycling computer: plan a bike route on an OSM map, tap a
+destination, watch the polyline appear, press Upload, and the BSC200
+switches itself into the navigation screen. No iGPSPORT cloud
+account, no manual route-pick on the device, no separate
+"connect/sync" dance.
+
+End-to-end verified on hardware (paired BSC200, firmware 2024-05-14):
+auto-plan → upload (FILE_OPERATION ADD) → auto-start navigation
+(ROUTE_PLAN FILE_USE) → on-device navigation screen.
+`scripts/e2e-test.sh` also exercises the
+`DELETE_ALL_ROUTES → LIST_GET` round-trip to confirm bulk deletion
+actually clears inactive routes from the device.
+
+### Changed
+
+- **Map UX: tap-to-plan replaces the two-step Plan/Upload flow.**
+  Picking a destination (search-bar or map-tap) now auto-runs the
+  configured `RouteProvider` immediately; the destination card
+  shows a single **Upload** button that displays a "Planning…"
+  spinner until the route is ready, then enables. Removes the
+  Plan button entirely.
+
+### Added
+
+- **"Delete all routes" button in Settings → Routes on device.**
+  Guard dialog notes that the active navigation route is
+  firmware-protected (PROTOCOL.md §7.4) and will remain on the
+  device even after a successful `FILES_DEL` bulk wipe.
+- **E2E verification of `DELETE_ALL_ROUTES`.** The harness now
+  uploads two routes, lists them to confirm both landed, issues
+  `DELETE_ALL_ROUTES`, then re-lists to assert the *inactive*
+  route is gone (active route is firmware-protected — expected to
+  stay). Gated by `LIGPSPORT_TEST_DELETE_ALL=0` if you want to skip.
+
+[1.0.0]: https://github.com/makefu/liGPSPORT-android/releases/tag/v1.0.0
+
 ## [0.1.3] — 2026-05-15
 
 Auto-start navigation on the BSC200 after every route upload — the
