@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Search
@@ -58,6 +60,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import de.syntaxfehler.ligpsport.data.RouteSessionStore
 import de.syntaxfehler.ligpsport.data.RouterPreferences
 import de.syntaxfehler.ligpsport.route.GpxParser
@@ -65,6 +68,7 @@ import de.syntaxfehler.ligpsport.route.Point
 import de.syntaxfehler.ligpsport.route.RouterRegistry
 import de.syntaxfehler.ligpsport.search.PhotonClient
 import de.syntaxfehler.ligpsport.search.SearchResult
+import de.syntaxfehler.ligpsport.ui.upload.sanitiseFileName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
@@ -94,16 +98,15 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 @OptIn(ExperimentalMaterial3Api::class, FlowPreview::class)
 @Composable
 fun MapScreen(
-    onUpload: (ByteArray) -> Unit,
     onOpenPairing: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Restore the previous session if the user is returning from the
-    // upload screen. Compose `remember` is destroyed across nav, so
-    // we lean on the in-process RouteSessionStore.
+    // Restore the previous session if the user is returning from
+    // Settings/Pairing — Compose `remember` is destroyed across nav,
+    // so we lean on the in-process RouteSessionStore.
     val initialSession = remember { RouteSessionStore.get() }
     var destination by remember {
         mutableStateOf(
@@ -113,6 +116,7 @@ fun MapScreen(
         )
     }
     var planningRoute by remember { mutableStateOf(false) }
+    var uploadState by remember { mutableStateOf<UploadButtonState>(UploadButtonState.Idle) }
     // Live mirror of RouteSessionStore.plannedGpx so the Upload button
     // can react to the most recent plan without re-reading the store on
     // every recomposition. Pre-populated from any restored session.
@@ -207,6 +211,12 @@ fun MapScreen(
                 )
                 plannedGpx = null
                 clearRouteOverlay(mapView)
+                // Reset the upload-button outcome on destination change.
+                // While the upload is in flight, leave the button alone
+                // — the spinner stays visible until that upload settles.
+                if (uploadState !is UploadButtonState.Uploading) {
+                    uploadState = UploadButtonState.Idle
+                }
             }
         }
     }
@@ -463,19 +473,40 @@ fun MapScreen(
 
         // Bottom card appears as soon as a destination is set.
         destination?.let { dest ->
+            val uploading = uploadState is UploadButtonState.Uploading
             DestinationCard(
                 destination = dest,
                 planning = planningRoute,
                 hasPlan = plannedGpx != null,
-                onClear = {
-                    destination = null
-                    plannedGpx = null
-                    statusMessage = null
-                    clearDestination(mapView)
+                uploadState = uploadState,
+                // Block the X button while the upload is in flight —
+                // clearing the destination during upload would tear
+                // down the card mid-progress and lose the result
+                // surface. The user can clear after success/failure.
+                onClear = if (uploading) null else {
+                    {
+                        destination = null
+                        plannedGpx = null
+                        statusMessage = null
+                        uploadState = UploadButtonState.Idle
+                        clearDestination(mapView)
+                    }
                 },
                 onUpload = onUpload@{
                     val gpx = plannedGpx ?: return@onUpload
-                    onUpload(gpx)
+                    val fileName = sanitiseFileName(dest.label) ?: "route"
+                    uploadState = UploadButtonState.Uploading
+                    scope.launch {
+                        val res = withContext(Dispatchers.IO) {
+                            UploadPipeline.uploadGpx(ctx, gpx, fileName = fileName)
+                        }
+                        uploadState = when (res) {
+                            is UploadPipeline.Result.Success ->
+                                UploadButtonState.Success
+                            is UploadPipeline.Result.Failure ->
+                                UploadButtonState.Failed(res.reason)
+                        }
+                    }
                 },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -572,12 +603,34 @@ private fun SuggestionRow(result: SearchResult, onClick: () -> Unit) {
     }
 }
 
+/**
+ * In-place upload-button states for the destination card.
+ *
+ * Idle → user has a plan, button reads "Upload" in the default tonal
+ *   colour and is clickable.
+ * Uploading → tapped Upload; button shows a spinner and is disabled.
+ *   Stays this way even if the user picks a new destination, so the
+ *   in-flight upload can't be re-fired before it settles.
+ * Success → BSC200 acked the upload (and the follow-up FILE_USE).
+ *   Button shows a green "Uploaded ✓" pill, disabled — picking a new
+ *   destination resets back to Idle.
+ * Failed → upload errored out; button turns red and reads "Retry",
+ *   tappable to fire the same upload again.
+ */
+internal sealed interface UploadButtonState {
+    data object Idle : UploadButtonState
+    data object Uploading : UploadButtonState
+    data object Success : UploadButtonState
+    data class Failed(val reason: String) : UploadButtonState
+}
+
 @Composable
 private fun DestinationCard(
     destination: Destination,
     planning: Boolean,
     hasPlan: Boolean,
-    onClear: () -> Unit,
+    uploadState: UploadButtonState,
+    onClear: (() -> Unit)?,
     onUpload: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -608,32 +661,121 @@ private fun DestinationCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = onClear) {
-                    Icon(Icons.Default.Cancel, contentDescription = "Clear destination")
+                if (onClear != null) {
+                    IconButton(onClick = onClear) {
+                        Icon(Icons.Default.Cancel, contentDescription = "Clear destination")
+                    }
                 }
             }
-            // Single Upload button — planning happens automatically as
-            // soon as the user picks a destination. The button shows a
-            // spinner while the route is still being computed and stays
-            // disabled until a plan is ready.
-            FilledTonalButton(
-                onClick = onUpload,
-                enabled = hasPlan && !planning,
-                modifier = Modifier.fillMaxWidth().testTag("upload_button"),
-            ) {
-                if (planning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp).padding(end = 8.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Text("Planning…")
-                } else {
-                    Icon(Icons.Default.CloudUpload, contentDescription = null)
-                    Text("  Upload")
-                }
-            }
+            UploadButton(
+                state = uploadState,
+                planning = planning,
+                hasPlan = hasPlan,
+                onUpload = onUpload,
+            )
         }
     }
+}
+
+/**
+ * The in-place upload button — drives all four [UploadButtonState]
+ * presentations off the same Composable so the layout stays stable
+ * across state changes (no FAB-style hop when the spinner appears).
+ */
+@Composable
+private fun UploadButton(
+    state: UploadButtonState,
+    planning: Boolean,
+    hasPlan: Boolean,
+    onUpload: () -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    // Green from the secondary container for the success state; red
+    // from the error container for failure. Both are still tonal-
+    // button-shaped so the page rhythm doesn't change.
+    val ok = Color(0xFF1B5E20)
+    val onOk = Color.White
+    val err = cs.errorContainer
+    val onErr = cs.onErrorContainer
+
+    val (label, leading, containerColor, contentColor, enabled, click) = when {
+        state is UploadButtonState.Success -> ButtonView(
+            label = "Uploaded",
+            leading = ButtonLeading.Icon(Icons.Default.CheckCircle),
+            containerColor = ok,
+            contentColor = onOk,
+            enabled = false,
+            click = {},
+        )
+        state is UploadButtonState.Failed -> ButtonView(
+            label = "Retry — ${state.reason.take(40)}",
+            leading = ButtonLeading.Icon(Icons.Default.Error),
+            containerColor = err,
+            contentColor = onErr,
+            enabled = true,
+            click = onUpload,
+        )
+        state is UploadButtonState.Uploading -> ButtonView(
+            label = "Uploading…",
+            leading = ButtonLeading.Spinner,
+            containerColor = cs.secondaryContainer,
+            contentColor = cs.onSecondaryContainer,
+            enabled = false,
+            click = {},
+        )
+        planning -> ButtonView(
+            label = "Planning…",
+            leading = ButtonLeading.Spinner,
+            containerColor = cs.secondaryContainer,
+            contentColor = cs.onSecondaryContainer,
+            enabled = false,
+            click = {},
+        )
+        else -> ButtonView(
+            label = "Upload",
+            leading = ButtonLeading.Icon(Icons.Default.CloudUpload),
+            containerColor = cs.secondaryContainer,
+            contentColor = cs.onSecondaryContainer,
+            enabled = hasPlan,
+            click = onUpload,
+        )
+    }
+
+    FilledTonalButton(
+        onClick = click,
+        enabled = enabled,
+        colors = androidx.compose.material3.ButtonDefaults.filledTonalButtonColors(
+            containerColor = containerColor,
+            contentColor = contentColor,
+            disabledContainerColor = containerColor,
+            disabledContentColor = contentColor,
+        ),
+        modifier = Modifier.fillMaxWidth().testTag("upload_button"),
+    ) {
+        when (leading) {
+            ButtonLeading.Spinner -> CircularProgressIndicator(
+                modifier = Modifier.size(18.dp).padding(end = 8.dp),
+                strokeWidth = 2.dp,
+                color = contentColor,
+            )
+            is ButtonLeading.Icon -> Icon(leading.icon, contentDescription = null)
+        }
+        Text("  $label")
+    }
+}
+
+private data class ButtonView(
+    val label: String,
+    val leading: ButtonLeading,
+    val containerColor: Color,
+    val contentColor: Color,
+    val enabled: Boolean,
+    val click: () -> Unit,
+)
+
+private sealed interface ButtonLeading {
+    data object Spinner : ButtonLeading
+    data class Icon(val icon: androidx.compose.ui.graphics.vector.ImageVector) : ButtonLeading
 }
 
 private data class Destination(val label: String, val lat: Double, val lon: Double)

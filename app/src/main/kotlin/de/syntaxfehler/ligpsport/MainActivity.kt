@@ -15,7 +15,6 @@ import de.syntaxfehler.ligpsport.ui.map.MapScreen
 import de.syntaxfehler.ligpsport.ui.pairing.PairingScreen
 import de.syntaxfehler.ligpsport.ui.settings.SettingsScreen
 import de.syntaxfehler.ligpsport.ui.theme.LigpsportTheme
-import de.syntaxfehler.ligpsport.ui.upload.UploadScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,10 +38,6 @@ private fun AppNav() {
     NavHost(navController = nav, startDestination = "map") {
         composable("map") {
             MapScreen(
-                onUpload = { gpxBytes ->
-                    nav.currentBackStackEntry?.savedStateHandle?.set("gpx", gpxBytes)
-                    nav.navigate("upload")
-                },
                 // Pairing is reached via Settings, not from the map
                 // directly — the gear icon owns device management.
                 onOpenPairing = { nav.navigate("settings") },
@@ -53,14 +48,6 @@ private fun AppNav() {
             SettingsScreen(
                 onBack = { nav.popBackStack() },
                 onOpenPairing = { nav.navigate("pairing") },
-            )
-        }
-        composable("upload") {
-            val gpx = nav.previousBackStackEntry?.savedStateHandle?.get<ByteArray>("gpx")
-            UploadScreen(
-                gpx = gpx,
-                onBack = { nav.popBackStack() },
-                onOpenSettings = { nav.navigate("settings") },
             )
         }
         composable("pairing") {
