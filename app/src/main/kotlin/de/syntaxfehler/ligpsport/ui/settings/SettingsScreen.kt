@@ -47,7 +47,6 @@ import androidx.compose.foundation.layout.size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import de.syntaxfehler.ligpsport.BuildConfig
 import de.syntaxfehler.ligpsport.agps.AgpsClient
 import de.syntaxfehler.ligpsport.ble.FileTransfer
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
@@ -424,20 +423,19 @@ private fun RouteRow(
 }
 
 /**
- * AGPS-token section. Lets advanced users override the runtime
- * AssistNow token without re-building the APK.
+ * AGPS-token section. Lets users supply their own u-blox AssistNow
+ * token so the BSC200 hot-starts its GNSS chip from app-side
+ * assistance data instead of doing a 30–90 s cold-start search.
  *
- * The actual token value is never displayed — the entry only reports
- * one of three states:
- *   - **Set (from settings)** — runtime override active.
- *   - **Set (build-time)** — `BuildConfig.AGPS_TOKEN` is non-empty.
- *   - **Auto (iGPSport backend)** — no override; client falls back
- *     to fetching the token from `prod.en.igpsport.com`, same as the
- *     official app.
+ * UI surfaces a single binary state — *Custom token set* vs *No
+ * custom token* — and never shows the value itself. When no custom
+ * token is configured, the app still seeds AGPS using a default
+ * token resolved at runtime, so the feature works out of the box.
  *
- * Tap → dialog with a masked text field, Test / Save / Cancel.
- * Test fires a real request against AssistNow Online and surfaces
- * the result inline.
+ * Tap → dialog with a masked text field plus Test / Save / Cancel
+ * (and Remove when a custom token is currently set). Test fires a
+ * real request against AssistNow Online and reports bytes received
+ * or the error inline.
  */
 @Composable
 private fun AgpsTokenSection() {
@@ -445,17 +443,17 @@ private fun AgpsTokenSection() {
     val scope = rememberCoroutineScope()
     val store = remember { AgpsTokenStore(ctx) }
     var userSet by remember { mutableStateOf(store.isSet()) }
-    val buildSet = remember { BuildConfig.AGPS_TOKEN.isNotBlank() }
     var dialogOpen by remember { mutableStateOf(false) }
 
-    val sourceLabel = when {
-        userSet -> "Set — from Settings"
-        buildSet -> "Set — from build (LIGPSPORT_AGPS_TOKEN)"
-        else -> "Auto — iGPSport backend (default)"
-    }
+    val sourceLabel = if (userSet) "Custom token set" else "No custom token"
     val description =
-        "Override the u-blox AssistNow token used for AGPS pre-seeding. " +
-            "Leave on Auto for the same fallback the official app uses."
+        if (userSet) {
+            "Using your u-blox AssistNow token. Tap to change or remove."
+        } else {
+            "AGPS speeds up GPS fix on your bike computer. A default " +
+                "token is used automatically — tap to supply your own " +
+                "from u-blox AssistNow."
+        }
 
     Column {
         SectionLabel("AGPS token")
@@ -547,11 +545,11 @@ private fun AgpsTokenDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     if (currentlySet) {
-                        "A token is currently set. Enter a new value to replace it, " +
-                            "or tap Remove to revert to the default (Auto)."
+                        "Enter a new token to replace the one you saved, or " +
+                            "tap Remove to fall back to the default."
                     } else {
-                        "Enter a u-blox AssistNow developer token. Leaving it " +
-                            "empty keeps the default (Auto — iGPSport backend)."
+                        "Paste your u-blox AssistNow token below. " +
+                            "Tap Test to check it works."
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )

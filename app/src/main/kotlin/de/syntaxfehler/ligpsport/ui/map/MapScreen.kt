@@ -495,12 +495,26 @@ fun MapScreen(
                 onUpload = onUpload@{
                     val gpx = plannedGpx ?: return@onUpload
                     val fileName = sanitiseFileName(dest.label) ?: "route"
+                    // Capture which destination was uploaded so we can
+                    // check after the BLE round-trip whether the user
+                    // picked a new point in the meantime. The button
+                    // should only report Success/Failed when the
+                    // destination still matches — otherwise reset to
+                    // Idle so it reads "Upload" for the new point.
+                    val uploadedLat = dest.lat
+                    val uploadedLon = dest.lon
                     uploadState = UploadButtonState.Uploading
                     scope.launch {
                         val res = withContext(Dispatchers.IO) {
                             UploadPipeline.uploadGpx(ctx, gpx, fileName = fileName)
                         }
-                        uploadState = when (res) {
+                        val current = destination
+                        val destChanged = current == null ||
+                            current.lat != uploadedLat ||
+                            current.lon != uploadedLon
+                        uploadState = if (destChanged) {
+                            UploadButtonState.Idle
+                        } else when (res) {
                             is UploadPipeline.Result.Success ->
                                 UploadButtonState.Success
                             is UploadPipeline.Result.Failure ->
