@@ -20,8 +20,14 @@ interface RouteProvider {
     val isOffline: Boolean
 
     /**
-     * Plan a route. [profile] is a hint (cycling vs. walking etc.);
-     * providers may ignore it if they only support one profile.
+     * Plan a route through `start → intermediates[0] → … → intermediates[N] → end`.
+     * Empty [intermediates] is the common two-point case. [profile] is a
+     * hint (cycling vs. walking etc.); providers may ignore it.
      */
-    suspend fun planGpx(start: Point, end: Point, profile: String = "trekking"): ByteArray
+    suspend fun planGpx(
+        start: Point,
+        end: Point,
+        intermediates: List<Point> = emptyList(),
+        profile: String = "trekking",
+    ): ByteArray
 }

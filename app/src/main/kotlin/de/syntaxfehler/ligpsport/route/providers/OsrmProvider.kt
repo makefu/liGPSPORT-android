@@ -38,9 +38,18 @@ class OsrmProvider(
     override val description: String = "Alternative OSM router via project-osrm.org"
     override val isOffline: Boolean = false
 
-    override suspend fun planGpx(start: Point, end: Point, profile: String): ByteArray {
+    override suspend fun planGpx(
+        start: Point,
+        end: Point,
+        intermediates: List<Point>,
+        profile: String,
+    ): ByteArray {
         val osrmProfile = profileMap[profile] ?: "bike"
-        val coords = "${start.longitude},${start.latitude};${end.longitude},${end.latitude}"
+        // OSRM accepts an N-coord polyline via `lon,lat;lon,lat;…`.
+        val pts = buildList {
+            add(start); addAll(intermediates); add(end)
+        }
+        val coords = pts.joinToString(";") { "${it.longitude},${it.latitude}" }
         val response = client.get("$baseUrl/route/v1/$osrmProfile/$coords") {
             parameter("geometries", "geojson")
             parameter("overview", "full")

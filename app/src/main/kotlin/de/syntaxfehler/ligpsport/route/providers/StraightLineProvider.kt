@@ -25,8 +25,25 @@ class StraightLineProvider(
     override val description: String = "Direct line — no road-following. Offline fallback."
     override val isOffline: Boolean = true
 
-    override suspend fun planGpx(start: Point, end: Point, profile: String): ByteArray {
-        val pts = interpolate(start, end, waypoints)
+    override suspend fun planGpx(
+        start: Point,
+        end: Point,
+        intermediates: List<Point>,
+        profile: String,
+    ): ByteArray {
+        // Stitch a great-circle interpolation through every segment.
+        // First segment keeps both endpoints; later segments drop their
+        // start point (it's the previous segment's end) so we don't
+        // emit duplicates.
+        val anchors = buildList {
+            add(start); addAll(intermediates); add(end)
+        }
+        val pts = ArrayList<Point>()
+        for ((i, a) in anchors.withIndex()) {
+            if (i == anchors.lastIndex) break
+            val seg = interpolate(a, anchors[i + 1], waypoints)
+            if (i == 0) pts.addAll(seg) else pts.addAll(seg.drop(1))
+        }
         val sb = StringBuilder()
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
         sb.append("<gpx version=\"1.1\" creator=\"ligpsport-straightline\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")

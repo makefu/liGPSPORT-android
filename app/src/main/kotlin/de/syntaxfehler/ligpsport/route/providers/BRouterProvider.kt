@@ -33,12 +33,18 @@ class BRouterProvider(
     override val description: String = "Cycling-optimised OSM router via brouter.de"
     override val isOffline: Boolean = false
 
-    override suspend fun planGpx(start: Point, end: Point, profile: String): ByteArray {
+    override suspend fun planGpx(
+        start: Point,
+        end: Point,
+        intermediates: List<Point>,
+        profile: String,
+    ): ByteArray {
+        val pts = buildList {
+            add(start); addAll(intermediates); add(end)
+        }
+        val lonlats = pts.joinToString("|") { "${it.longitude},${it.latitude}" }
         val response: HttpResponse = client.get(baseUrl) {
-            parameter(
-                "lonlats",
-                "${start.longitude},${start.latitude}|${end.longitude},${end.latitude}",
-            )
+            parameter("lonlats", lonlats)
             parameter("profile", profile)
             parameter("alternativeidx", "0")
             parameter("format", "gpx")

@@ -113,7 +113,7 @@ object UploadPipeline {
         Log.i(TAG, "plan: provider=${provider.id} start=${resolvedStart.latitude},${resolvedStart.longitude} end=${end.latitude},${end.longitude}")
         val t0 = System.currentTimeMillis()
         val gpx = try {
-            provider.planGpx(resolvedStart, end, profile)
+            provider.planGpx(resolvedStart, end, profile = profile)
         } catch (e: Exception) {
             Log.e(TAG, "plan: ${provider.id} failed", e)
             return Result.Failure("${provider.id} failed: ${e.message}")

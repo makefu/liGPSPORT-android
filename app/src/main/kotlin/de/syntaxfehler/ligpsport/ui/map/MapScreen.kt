@@ -1,7 +1,11 @@
 package de.syntaxfehler.ligpsport.ui.map
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Color as AndroidColor
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -117,6 +121,27 @@ fun MapScreen(
     }
     var planningRoute by remember { mutableStateOf(false) }
     var uploadState by remember { mutableStateOf<UploadButtonState>(UploadButtonState.Idle) }
+    // Ordered list of intermediate stops between currentLocation and
+    // destination. Long-pressing the map drops one; dragging the
+    // marker moves it; the auto-plan effect re-routes through them.
+    var intermediates by remember { mutableStateOf<List<Waypoint>>(emptyList()) }
+    // User-edited start point. null = follow the live GPS / mock fix.
+    // Set by dragging the Start marker on the map; takes precedence
+    // over `currentLocation` in the auto-plan effect.
+    var startOverride by remember { mutableStateOf<Point?>(null) }
+    // Drag-end handler for the destination marker. Updates coords but
+    // keeps the existing label (a drag isn't a "pick a new place"
+    // gesture) and keeps the intermediates list intact (the user is
+    // refining the same multi-stop route).
+    val onDestDragEnd: (Double, Double) -> Unit = { lat, lon ->
+        destination?.let { destination = it.copy(lat = lat, lon = lon) }
+    }
+    // Drag-end for the Start marker — promotes the live fix to an
+    // explicit override so subsequent live-fix updates don't yank the
+    // route's origin out from under the user.
+    val onStartDragEnd: (Double, Double) -> Unit = { lat, lon ->
+        startOverride = Point(lat, lon)
+    }
     // Live mirror of RouteSessionStore.plannedGpx so the Upload button
     // can react to the most recent plan without re-reading the store on
     // every recomposition. Pre-populated from any restored session.
@@ -183,7 +208,7 @@ fun MapScreen(
     LaunchedEffect(mapView) {
         initialSession?.let { s ->
             val dest = Destination(s.destinationName, s.destinationLat, s.destinationLon)
-            setDestination(mapView, null, dest)
+            setDestination(mapView, null, dest, onDestDragEnd)
             mapView.controller.animateTo(GeoPoint(s.destinationLat, s.destinationLon))
             s.plannedGpx?.let { drawRoute(mapView, it) }
         }
@@ -303,7 +328,8 @@ fun MapScreen(
                         lat = p.latitude,
                         lon = p.longitude,
                     )
-                    setDestination(mapView, destination, provisional)
+                    intermediates = emptyList()
+                    setDestination(mapView, destination, provisional, onDestDragEnd)
                     destination = provisional
                     // Collapse the search overlay — the user just made
                     // a pick gesture; keeping the search panel open
@@ -322,13 +348,25 @@ fun MapScreen(
                         val cur = destination ?: return@launch
                         if (cur.lat != p.latitude || cur.lon != p.longitude) return@launch
                         val upgraded = Destination(named.name, p.latitude, p.longitude)
-                        setDestination(mapView, cur, upgraded)
+                        setDestination(mapView, cur, upgraded, onDestDragEnd)
                         destination = upgraded
                     }
                 }
                 return true
             }
-            override fun longPressHelper(p: GeoPoint?): Boolean = false
+            override fun longPressHelper(p: GeoPoint?): Boolean {
+                if (p == null) return false
+                // Long-press adds an intermediate stop (Google-Maps-style
+                // "add a via point"). Only meaningful once a destination
+                // exists — otherwise there's nothing to route through.
+                if (destination == null) return false
+                intermediates = intermediates + Waypoint(
+                    id = System.nanoTime(),
+                    lat = p.latitude,
+                    lon = p.longitude,
+                )
+                return true
+            }
         }
         mapView.overlays.add(0, MapEventsOverlay(receiver))
         // Add the location overlay on top so the blue dot stays
@@ -402,7 +440,8 @@ fun MapScreen(
                         result = result,
                         onClick = {
                             val picked = Destination(result.name, result.latitude, result.longitude)
-                            destination = setDestination(mapView, destination, picked)
+                            intermediates = emptyList()
+                            destination = setDestination(mapView, destination, picked, onDestDragEnd)
                             mapView.controller.animateTo(GeoPoint(picked.lat, picked.lon))
                             searchQuery = result.name
                             queryFlow.value = ""
@@ -440,15 +479,14 @@ fun MapScreen(
                 .padding(end = 16.dp, bottom = 24.dp),
         )
 
-        // Auto-plan whenever the destination changes and we have a GPS
-        // fix. The Plan button is gone — tapping a point on the map (or
-        // picking a search result) is the user's commitment to a
-        // destination, and a route preview is the immediate feedback. The
-        // user still has a chance to back out before Upload.
-        LaunchedEffect(destination, currentLocation) {
+        // Auto-plan whenever the destination, the list of intermediate
+        // stops, or our GPS fix changes. The Plan button is gone — any
+        // edit (new destination, new intermediate, dragged marker) is
+        // the user's commitment, and a route preview is the immediate
+        // feedback. They still get to back out before Upload.
+        LaunchedEffect(destination, intermediates, startOverride, currentLocation) {
             val dest = destination ?: return@LaunchedEffect
-            if (plannedGpx != null) return@LaunchedEffect
-            val start = currentLocation ?: run {
+            val start = startOverride ?: currentLocation ?: run {
                 statusMessage = "Waiting for GPS fix…"
                 return@LaunchedEffect
             }
@@ -458,17 +496,54 @@ fun MapScreen(
             planningRoute = true
             try {
                 val end = Point(dest.lat, dest.lon)
-                val gpx = withContext(Dispatchers.IO) { provider.planGpx(start, end) }
+                val via = intermediates.map { Point(it.lat, it.lon) }
+                val gpx = withContext(Dispatchers.IO) {
+                    provider.planGpx(start, end, intermediates = via)
+                }
                 clearRouteOverlay(mapView)
                 drawRoute(mapView, gpx)
                 RouteSessionStore.setPlannedGpx(gpx)
                 plannedGpx = gpx
-                statusMessage = "Route ready — tap Upload to send."
+                statusMessage = if (via.isEmpty()) {
+                    "Route ready — tap Upload to send."
+                } else {
+                    "Route via ${via.size} stop${if (via.size == 1) "" else "s"} ready."
+                }
             } catch (e: Exception) {
                 statusMessage = "Routing failed: ${e.message}"
             } finally {
                 planningRoute = false
             }
+        }
+
+        // Render the Start marker. Defaults to the live fix; once the
+        // user drags it, [startOverride] takes precedence so subsequent
+        // GPS updates don't reset the planned origin. Hidden when there
+        // is no destination (nothing to route from yet) and there's no
+        // override — the blue MyLocation dot is enough on its own.
+        LaunchedEffect(destination, startOverride, currentLocation) {
+            val markerAt = startOverride
+                ?: if (destination != null) currentLocation else null
+            setStartMarker(mapView, markerAt, onStartDragEnd)
+        }
+
+        // Re-render intermediate markers whenever the list changes.
+        // Each marker is draggable (move → re-plan) and tappable
+        // (tap → remove). Stable Waypoint.id keeps drag-end edits
+        // targeting the right entry across recompositions.
+        LaunchedEffect(intermediates) {
+            setIntermediates(
+                mapView = mapView,
+                waypoints = intermediates,
+                onMove = { id, lat, lon ->
+                    intermediates = intermediates.map {
+                        if (it.id == id) it.copy(lat = lat, lon = lon) else it
+                    }
+                },
+                onRemove = { id ->
+                    intermediates = intermediates.filterNot { it.id == id }
+                },
+            )
         }
 
         // Bottom card appears as soon as a destination is set.
@@ -487,6 +562,8 @@ fun MapScreen(
                     {
                         destination = null
                         plannedGpx = null
+                        intermediates = emptyList()
+                        startOverride = null
                         statusMessage = null
                         uploadState = UploadButtonState.Idle
                         clearDestination(mapView)
@@ -794,14 +871,40 @@ private sealed interface ButtonLeading {
 
 private data class Destination(val label: String, val lat: Double, val lon: Double)
 
-private fun setDestination(mapView: MapView, existing: Destination?, next: Destination): Destination {
+/**
+ * One intermediate stop the route must pass through. Holds a stable
+ * [id] so Compose recompositions don't lose track of which marker
+ * corresponds to which entry when the list is reshuffled by adding /
+ * dragging / removing.
+ */
+internal data class Waypoint(
+    val id: Long,
+    val lat: Double,
+    val lon: Double,
+)
+
+/**
+ * Replaces the destination marker with a fresh draggable one. The
+ * marker reports drag-end through [onDragEnd] so MapScreen can
+ * update its `destination` state and the auto-plan effect can
+ * re-route. The dragged marker keeps the previous label so a drag
+ * doesn't strip the reverse-geocoded place name.
+ */
+private fun setDestination(
+    mapView: MapView,
+    existing: Destination?,
+    next: Destination,
+    onDragEnd: ((lat: Double, lon: Double) -> Unit)? = null,
+): Destination {
     mapView.overlays.removeAll { it is Marker && it.title == DEST_MARKER_TITLE }
-    val marker = Marker(mapView).apply {
-        position = GeoPoint(next.lat, next.lon)
-        title = DEST_MARKER_TITLE
-        snippet = next.label
-        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-    }
+    val marker = draggableMarker(
+        mapView = mapView,
+        titleField = DEST_MARKER_TITLE,
+        snippetField = next.label,
+        position = GeoPoint(next.lat, next.lon),
+        fillArgb = DEST_FILL,
+        onDragEnd = onDragEnd,
+    )
     mapView.overlays.add(marker)
     mapView.invalidate()
     return next
@@ -809,7 +912,36 @@ private fun setDestination(mapView: MapView, existing: Destination?, next: Desti
 
 private fun clearDestination(mapView: MapView) {
     mapView.overlays.removeAll { it is Marker && it.title == DEST_MARKER_TITLE }
+    mapView.overlays.removeAll { it is Marker && it.title == START_MARKER_TITLE }
+    mapView.overlays.removeAll { it is Marker && it.title?.startsWith(INTERMEDIATE_MARKER_PREFIX) == true }
     mapView.overlays.removeAll { it is Polyline }
+    mapView.invalidate()
+}
+
+/**
+ * Re-render the full set of intermediate-stop markers. Each is
+ * draggable (move → re-plan) and clickable (tap → remove). Cheaper
+ * to wipe and re-add than to diff: 0–8 markers per redraw.
+ */
+private fun setIntermediates(
+    mapView: MapView,
+    waypoints: List<Waypoint>,
+    onMove: (id: Long, lat: Double, lon: Double) -> Unit,
+    onRemove: (id: Long) -> Unit,
+) {
+    mapView.overlays.removeAll { it is Marker && it.title?.startsWith(INTERMEDIATE_MARKER_PREFIX) == true }
+    for ((index, w) in waypoints.withIndex()) {
+        val m = draggableMarker(
+            mapView = mapView,
+            titleField = "$INTERMEDIATE_MARKER_PREFIX${w.id}",
+            snippetField = "Stop ${index + 1} • tap to remove",
+            position = GeoPoint(w.lat, w.lon),
+            fillArgb = VIA_FILL,
+            onDragEnd = { lat, lon -> onMove(w.id, lat, lon) },
+            onClick = { onRemove(w.id) },
+        )
+        mapView.overlays.add(m)
+    }
     mapView.invalidate()
 }
 
@@ -839,3 +971,112 @@ private fun formatDistance(meters: Double): String = when {
 }
 
 private const val DEST_MARKER_TITLE = "Destination"
+private const val START_MARKER_TITLE = "Start"
+private const val INTERMEDIATE_MARKER_PREFIX = "Stop#"
+
+/** Material-recommended minimum touch target is 48 dp; we go a tad
+ *  larger on long-press / drag so the user gets a clear "I have it"
+ *  affordance.
+ */
+private const val MARKER_IDLE_DP = 44
+private const val MARKER_DRAG_DP = 60
+
+private const val START_FILL = 0xFF1976D2.toInt()  // blue
+private const val DEST_FILL = 0xFFD32F2F.toInt()   // red
+private const val VIA_FILL = 0xFF2E7D32.toInt()    // green
+
+/** Generate a flat-colour circle drawable with a white outline,
+ *  sized in dp so the hitbox is consistent across densities.
+ */
+private fun circleMarker(
+    ctx: Context,
+    sizeDp: Int,
+    fillArgb: Int,
+): Drawable {
+    val px = (sizeDp * ctx.resources.displayMetrics.density).toInt()
+    val stroke = (3 * ctx.resources.displayMetrics.density).toInt()
+    return GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(fillArgb)
+        setStroke(stroke, AndroidColor.WHITE)
+        setSize(px, px)
+        setBounds(0, 0, px, px)
+    }
+}
+
+/**
+ * Build a draggable Marker with a generous circular hitbox, drag-
+ * lift visual feedback (icon grows while held), and a click handler.
+ * Used uniformly by Start / Destination / Intermediate markers so
+ * they all feel the same to the touch.
+ */
+private fun draggableMarker(
+    mapView: MapView,
+    titleField: String,
+    snippetField: String,
+    position: GeoPoint,
+    fillArgb: Int,
+    onDragEnd: ((lat: Double, lon: Double) -> Unit)?,
+    onClick: (() -> Unit)? = null,
+): Marker {
+    val ctx = mapView.context
+    val idle = circleMarker(ctx, MARKER_IDLE_DP, fillArgb)
+    val held = circleMarker(ctx, MARKER_DRAG_DP, fillArgb)
+    return Marker(mapView).apply {
+        this.position = position
+        title = titleField
+        snippet = snippetField
+        icon = idle
+        // Anchor at the centre so the drawable's bounding box is the
+        // hit-test area; a bottom anchor on a circular icon would mean
+        // the touchable area sits above the visible pin.
+        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+        if (onDragEnd != null) {
+            isDraggable = true
+            setOnMarkerDragListener(object : Marker.OnMarkerDragListener {
+                override fun onMarkerDragStart(marker: Marker) {
+                    marker.icon = held
+                    mapView.invalidate()
+                }
+                override fun onMarkerDrag(marker: Marker) {}
+                override fun onMarkerDragEnd(marker: Marker) {
+                    marker.icon = idle
+                    onDragEnd(marker.position.latitude, marker.position.longitude)
+                }
+            })
+        }
+        if (onClick != null) {
+            setOnMarkerClickListener { _, _ ->
+                onClick(); true
+            }
+        }
+    }
+}
+
+/**
+ * Render (or remove, when [at] is null) the editable Start marker.
+ * Draggable so the user can plan from a fictional origin without
+ * physically moving — dragging promotes the live fix to a sticky
+ * override, mirroring Google Maps' "drag your starting point".
+ */
+private fun setStartMarker(
+    mapView: MapView,
+    at: Point?,
+    onDragEnd: (lat: Double, lon: Double) -> Unit,
+) {
+    mapView.overlays.removeAll { it is Marker && it.title == START_MARKER_TITLE }
+    if (at == null) {
+        mapView.invalidate()
+        return
+    }
+    val m = draggableMarker(
+        mapView = mapView,
+        titleField = START_MARKER_TITLE,
+        snippetField = "Drag to change start",
+        position = GeoPoint(at.latitude, at.longitude),
+        fillArgb = START_FILL,
+        onDragEnd = onDragEnd,
+    )
+    mapView.overlays.add(m)
+    mapView.invalidate()
+}
