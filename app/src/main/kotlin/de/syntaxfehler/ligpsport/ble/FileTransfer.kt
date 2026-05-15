@@ -26,11 +26,24 @@ object FileTransfer {
     // route_plan.proto ROUTE_PLAN_OPERATE_TYPE values
     private const val ROUTE_PLAN_OP_LIST_GET = 1
     private const val ROUTE_PLAN_OP_FILE_DEL = 3
+    private const val ROUTE_PLAN_OP_FILE_USE = 5
     private const val ROUTE_PLAN_OP_FILES_DEL = 6
 
     // general_file_operation.proto file_type
     const val FILE_OP_TYPE_ROUTE_PLAN = 2
     const val FILE_OP_TYPE_AGPS = 7
+
+    // route_plan.proto ROUTE_PLAN_FILE_TYPE values (subset used here).
+    private const val ROUTE_PLAN_FILE_TYPE_CNX = 1
+    private const val ROUTE_PLAN_FILE_TYPE_GPX = 2
+    private const val ROUTE_PLAN_FILE_TYPE_FIT = 3
+    private const val ROUTE_PLAN_FILE_TYPE_TCX = 4
+    private const val ROUTE_PLAN_FILE_TYPE_XML = 5
+
+    // route_plan.proto ROUTE_PLAN_FILE_STATUS values.
+    internal const val ROUTE_PLAN_FILE_STATUS_INVALID = 0
+    internal const val ROUTE_PLAN_FILE_STATUS_USED = 1
+    internal const val ROUTE_PLAN_FILE_STATUS_UNUSED = 2
 
     // Magic byte at offset 3 of the 20-byte head for a chunked file
     // upload — without this, the device treats the payload as a
@@ -39,6 +52,25 @@ object FileTransfer {
 
     private const val STATUS_OK = 0
     private const val STATUS_DONE_EARLY = 4
+
+    /**
+     * `DeviceReturnStatus` wire-byte → name. The WiFi block sits at
+     * 16-23 and Navigation at 65-66 (not sequential ordinals). See
+     * PROTOCOL.md §7.2 status table. Used in error surface for
+     * RouteUploadError / NavigationStartError.
+     */
+    internal fun deviceStatusName(status: Int): String = when (status) {
+        0 -> "Success"
+        1 -> "DataError"
+        2 -> "CrcError"
+        3 -> "OverSize"
+        4 -> "QuantityIsFull"
+        5 -> "IsBeingUsed"
+        65 -> "NavigationRouteDeletionFailed"
+        66 -> "NavigationRouteDoesNotExist"
+        -1 -> "no ack (timed out)"
+        else -> "device rejected: status=$status"
+    }
 
     data class UploadResult(val success: Boolean, val message: String = "", val status: Int = 0)
 
@@ -146,6 +178,58 @@ object FileTransfer {
         }
     }
 
+    /**
+     * Activate a previously-uploaded route — flips the BSC200 from
+     * "route loaded" to "actively navigating". Mirrors
+     * `IGPDeviceManager.setRoutePlanFile(id, fileType)` (smali c4
+     * line 27391). PROTOCOL.md §7.2 has the wire-level reference.
+     *
+     * BSC200 reports `getGeneration() == 4` → the request goes out as
+     * a **single merged write** of (20-byte head ‖ protobuf body) on
+     * the FOURTH characteristic (`…-6e`). The earlier two-channel
+     * split (gen-3 path) was silently ignored by the firmware.
+     *
+     * The protobuf body carries `route_plan_info_msg = [{id,
+     * file_type, name, total_distance}]` — the BSC200 firmware
+     * validates `name` and drops requests that omit it. Defaults
+     * mirror the live capture: `name = str(fileId)` for unnamed
+     * routes, `total_distance = 0`.
+     */
+    suspend fun startNavigation(
+        transport: Transport,
+        fileId: Long,
+        fileExtension: String = "cnx",
+        name: String? = null,
+        totalDistanceM: Long = 0L,
+        timeoutMs: Long = 10_000,
+    ): UploadResult {
+        val effectiveName = name ?: fileId.toString()
+        val body = buildRoutePlanFileUsePb(fileId, fileExtension, effectiveName, totalDistanceM)
+        val header = buildRoutePlanFileUseHeader(body)
+        val merged = header + body
+        Log.i(
+            TAG,
+            "start-navigation merged=${merged.joinToString("") { "%02x".format(it) }}",
+        )
+
+        val filtered = transport.frames().mapNotNull { rf ->
+            val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
+            parsed?.takeIf { it.service == SERVICE_ROUTE_PLAN }
+        }
+
+        // Gen-4 merged-write path: head ‖ body in a single send on FOURTH.
+        transport.send(merged, Channel.FOURTH)
+
+        val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
+        val status = ack?.status ?: -1
+        Log.i(TAG, "start-navigation file_id=$fileId.$fileExtension → status=$status")
+        return when (status) {
+            STATUS_OK, STATUS_DONE_EARLY -> UploadResult(true, "navigating", status)
+            -1 -> UploadResult(false, "no ack from device (timed out)", -1)
+            else -> UploadResult(false, deviceStatusName(status), status)
+        }
+    }
+
     /** One entry in a LIST_GET response. */
     data class RouteEntry(
         val id: Long,
@@ -196,10 +280,51 @@ object FileTransfer {
     }
 
     private fun buildRoutePlanListPb(): ByteArray {
+        // BSC200 silently returns an empty list if no `route_list_get_msg`
+        // (field 12) range is supplied — verified against firmware
+        // 2024-05-14. The Android app always sends file_index_start/end.
+        // `file_list_support_num_max` is 10 on current firmware, so
+        // [0, 100] is a safe upper bound.
+        val rangePb = ByteArrayOutputStream().apply {
+            writeVarintField(this, 3, 0); writeVarint(this, 0L)
+            writeVarintField(this, 4, 0); writeVarint(this, 100L)
+        }.toByteArray()
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, 0); writeVarint(out, SERVICE_ROUTE_PLAN.toLong())
         writeVarintField(out, 2, 0); writeVarint(out, ROUTE_PLAN_OP_LIST_GET.toLong())
+        // route_list_get_msg (field 12, length-delimited message)
+        out.write((12 shl 3) or 2)
+        writeVarint(out, rangePb.size.toLong())
+        out.write(rangePb)
         return out.toByteArray()
+    }
+
+    /** Result of `navStatus()` — mirrors Python `commands.NavStatus`. */
+    data class NavStatus(
+        val isNavigating: Boolean,
+        val activeRouteId: Long?,
+        val activeRouteName: String,
+    )
+
+    /**
+     * Read the route-plan list and report which (if any) route the
+     * BSC200 is currently navigating. Mirrors
+     * `RoutePlanViewModel.requestUsingRouteID` in the iGPSPORT app: a
+     * `ROUTE_PLAN LIST_GET` reply tags each `route_plan_info_msg` with
+     * `status` (field 7); the active route is the one with
+     * `enum_USED_STATUS = 1`. PROTOCOL.md §7.3.
+     *
+     * `DEV_STATUS.navi_status` exists in the proto but is never
+     * populated by BSC200 firmware — use this instead.
+     */
+    suspend fun navStatus(transport: Transport, timeoutMs: Long = 10_000): NavStatus {
+        val routes = listRoutes(transport, timeoutMs)
+        val active = routes.firstOrNull { it.status == ROUTE_PLAN_FILE_STATUS_USED }
+        return if (active != null) {
+            NavStatus(isNavigating = true, activeRouteId = active.id, activeRouteName = active.name)
+        } else {
+            NavStatus(isNavigating = false, activeRouteId = null, activeRouteName = "")
+        }
     }
 
     /**
@@ -251,45 +376,185 @@ object FileTransfer {
     }
 
     /**
-     * Destructive: delete ALL routes on the device. Uses ROUTE_PLAN
-     * `FILES_DEL` (op = 6), which the BSC200 implements as a wipe of
-     * its route_plan storage. Caller is responsible for confirmation
-     * gating — there is no undo on the device side.
+     * Destructive: delete ALL inactive routes on the device. Per
+     * PROTOCOL.md §7.4 the BSC200 silently ignores FILES_DEL that
+     * omits the targets, and the active route is firmware-protected
+     * (it acks status=0 but doesn't delete). We LIST_GET first, then
+     * issue FILES_DEL with every route's full `line_id` + `info_msg`
+     * pair as gen-4 demands.
      */
     suspend fun deleteAllRoutes(
         transport: Transport,
         timeoutMs: Long = 15_000,
     ): UploadResult {
-        val body = buildRoutePlanFilesDeletePb()
-        val wire = buildFrame(
-            Frame(
-                service = SERVICE_ROUTE_PLAN,
-                operation = ROUTE_PLAN_OP_FILES_DEL,
-                payload = body,
-            ),
-        )
+        val routes = listRoutes(transport, timeoutMs)
+        if (routes.isEmpty()) {
+            return UploadResult(true, "no routes on device", STATUS_OK)
+        }
+        val targets = routes.map {
+            DeleteTarget(it.id, it.name.ifEmpty { it.id.toString() }, fileTypeExt(it.fileType))
+        }
+        return deleteRoutesById(transport, targets, timeoutMs)
+    }
+
+    /** One target for `deleteRoutesById`. */
+    data class DeleteTarget(val fileId: Long, val name: String, val extension: String)
+
+    /**
+     * Delete one or more routes by id. Sends a single
+     * `ROUTE_PLAN FILES_DEL` (op = 6) with `line_id` and
+     * `route_plan_info_msg` both populated — PROTOCOL.md §7.4: sending
+     * only one or the other is silently no-op'd by the BSC200. Gen-4
+     * single merged write on FOURTH.
+     */
+    suspend fun deleteRoutesById(
+        transport: Transport,
+        targets: List<DeleteTarget>,
+        timeoutMs: Long = 15_000,
+    ): UploadResult {
+        if (targets.isEmpty()) {
+            return UploadResult(true, "no targets", STATUS_OK)
+        }
+        val body = buildRoutePlanFilesDeletePb(targets)
+        val header = buildRoutePlanFilesDeleteHeader(body)
+        val merged = header + body
         val filtered = transport.frames().mapNotNull { rf ->
             val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
             parsed?.takeIf { it.service == SERVICE_ROUTE_PLAN }
         }
-        transport.send(wire, Channel.CONTROL)
+        transport.send(merged, Channel.FOURTH)
         val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
         val status = ack?.status ?: -1
-        Log.i(TAG, "delete-all-routes → status=$status")
+        Log.i(TAG, "files-del ids=${targets.map { it.fileId }} → status=$status")
         return when (status) {
-            STATUS_OK, STATUS_DONE_EARLY -> UploadResult(true, "deleted all", status)
+            STATUS_OK, STATUS_DONE_EARLY -> UploadResult(true, "deleted", status)
             -1 -> UploadResult(false, "no ack from device (timed out)", -1)
-            else -> UploadResult(false, "device rejected: status=$status", status)
+            else -> UploadResult(false, deviceStatusName(status), status)
         }
     }
 
-    private fun buildRoutePlanFilesDeletePb(): ByteArray {
+    private fun buildRoutePlanFilesDeletePb(targets: List<DeleteTarget>): ByteArray {
         val out = ByteArrayOutputStream()
         writeVarintField(out, 1, 0); writeVarint(out, SERVICE_ROUTE_PLAN.toLong())
         writeVarintField(out, 2, 0); writeVarint(out, ROUTE_PLAN_OP_FILES_DEL.toLong())
-        // line_id is `repeated string` (field 3). FILES_DEL doesn't
-        // need a target list — the device wipes whatever it has.
+        for (t in targets) {
+            writeStringField(out, 3, "${t.fileId}.${t.extension}")
+        }
+        for (t in targets) {
+            val info = ByteArrayOutputStream().apply {
+                writeVarintField(this, 1, 0); writeVarint(this, t.fileId)
+                writeVarintField(this, 2, 0); writeVarint(this, routePlanFileTypeFromExt(t.extension).toLong())
+                writeStringField(this, 3, t.name.ifEmpty { t.fileId.toString() })
+                writeVarintField(this, 4, 0); writeVarint(this, 0L)
+            }.toByteArray()
+            out.write((5 shl 3) or 2)
+            writeVarint(out, info.size.toLong())
+            out.write(info)
+        }
         return out.toByteArray()
+    }
+
+    private fun buildRoutePlanFilesDeleteHeader(body: ByteArray): ByteArray {
+        val head = ByteArray(HEADER_SIZE)
+        head[HDR_TYPE] = TYPE_PB.toByte()
+        head[HDR_SERVICE] = (SERVICE_ROUTE_PLAN and 0xFF).toByte()
+        head[HDR_SUB_SERVICE] = RESERVED_BYTE.toByte()
+        head[HDR_FILE_TAG] = RESERVED_BYTE.toByte()
+        head[HDR_OPERATION] = (ROUTE_PLAN_OP_FILES_DEL and 0xFF).toByte()
+        head[HDR_SUB_OPERATION] = RESERVED_BYTE.toByte()
+        head[HDR_RESERVED_6] = RESERVED_BYTE.toByte()
+        head[HDR_PAYLOAD_SIZE] = ((body.size shr 8) and 0xFF).toByte()
+        head[HDR_PAYLOAD_SIZE + 1] = (body.size and 0xFF).toByte()
+        head[HDR_PAYLOAD_CRC] = crc8(body).toByte()
+        head[HDR_END_MARKER] = TYPE_PB.toByte()
+        for (off in HDR_RESERVED_PAD until HDR_RESERVED_PAD + RESERVED_PAD_LENGTH) {
+            head[off] = RESERVED_BYTE.toByte()
+        }
+        head[HDR_HEADER_CRC] = crc8(head, 0, HDR_HEADER_CRC).toByte()
+        return head
+    }
+
+    private fun fileTypeExt(fileType: Int): String = when (fileType) {
+        ROUTE_PLAN_FILE_TYPE_CNX -> "cnx"
+        ROUTE_PLAN_FILE_TYPE_GPX -> "gpx"
+        ROUTE_PLAN_FILE_TYPE_FIT -> "fit"
+        ROUTE_PLAN_FILE_TYPE_TCX -> "tcx"
+        ROUTE_PLAN_FILE_TYPE_XML -> "xml"
+        else -> "cnx"
+    }
+
+    /**
+     * `route_plan_data_msg{service_type=7, route_plan_operate_type=5,
+     * line_id=["<id>.<ext>"], route_plan_info_msg=[{id, file_type}]}`.
+     * Visible for testing.
+     */
+    internal fun buildRoutePlanFileUsePb(
+        fileId: Long,
+        ext: String,
+        name: String = fileId.toString(),
+        totalDistanceM: Long = 0L,
+    ): ByteArray {
+        // Mirror ligpsport v1.2.0 `_build_file_use_pb`: BSC200 firmware
+        // validates `name` and silently drops FILE_USE if absent. The
+        // captured app fills `name=str(file_id)` for unnamed routes.
+        val infoPb = ByteArrayOutputStream().apply {
+            writeVarintField(this, 1, 0); writeVarint(this, fileId)
+            writeVarintField(this, 2, 0); writeVarint(this, routePlanFileTypeFromExt(ext).toLong())
+            writeStringField(this, 3, name)
+            writeVarintField(this, 4, 0); writeVarint(this, totalDistanceM)
+        }.toByteArray()
+        val out = ByteArrayOutputStream()
+        // service_type (field 1, varint) = ROUTE_PLAN
+        writeVarintField(out, 1, 0); writeVarint(out, SERVICE_ROUTE_PLAN.toLong())
+        // route_plan_operate_type (field 2, varint) = FILE_USE
+        writeVarintField(out, 2, 0); writeVarint(out, ROUTE_PLAN_OP_FILE_USE.toLong())
+        // line_id (field 3, length-delimited string, repeated)
+        writeStringField(out, 3, "$fileId.$ext")
+        // route_plan_info_msg (field 5, length-delimited message, repeated)
+        out.write((5 shl 3) or 2)
+        writeVarint(out, infoPb.size.toLong())
+        out.write(infoPb)
+        return out.toByteArray()
+    }
+
+    /**
+     * 20-byte PbFrame header that travels on CONTROL while the
+     * protobuf body travels on FOURTH (BSC200 gen-3 split, see
+     * PROTOCOL.md §7.2). Visible for testing.
+     */
+    internal fun buildRoutePlanFileUseHeader(body: ByteArray): ByteArray {
+        // Reuse the existing PbFrame builder so the CRC, end-marker
+        // and padding logic stay shared — but pass an empty payload
+        // so the caller can ship the body separately on a different
+        // characteristic. The body bytes still drive the size + CRC
+        // fields, so we hand-build the header here rather than
+        // round-tripping through buildFrame(Frame(payload=body)).
+        val head = ByteArray(HEADER_SIZE)
+        head[HDR_TYPE] = TYPE_PB.toByte()
+        head[HDR_SERVICE] = (SERVICE_ROUTE_PLAN and 0xFF).toByte()
+        head[HDR_SUB_SERVICE] = RESERVED_BYTE.toByte()
+        head[HDR_FILE_TAG] = RESERVED_BYTE.toByte()
+        head[HDR_OPERATION] = (ROUTE_PLAN_OP_FILE_USE and 0xFF).toByte()
+        head[HDR_SUB_OPERATION] = RESERVED_BYTE.toByte()
+        head[HDR_RESERVED_6] = RESERVED_BYTE.toByte()
+        head[HDR_PAYLOAD_SIZE] = ((body.size shr 8) and 0xFF).toByte()
+        head[HDR_PAYLOAD_SIZE + 1] = (body.size and 0xFF).toByte()
+        head[HDR_PAYLOAD_CRC] = crc8(body).toByte()
+        head[HDR_END_MARKER] = TYPE_PB.toByte()
+        for (off in HDR_RESERVED_PAD until HDR_RESERVED_PAD + RESERVED_PAD_LENGTH) {
+            head[off] = RESERVED_BYTE.toByte()
+        }
+        head[HDR_HEADER_CRC] = crc8(head, 0, HDR_HEADER_CRC).toByte()
+        return head
+    }
+
+    private fun routePlanFileTypeFromExt(ext: String): Int = when (ext.lowercase()) {
+        "cnx" -> ROUTE_PLAN_FILE_TYPE_CNX
+        "gpx" -> ROUTE_PLAN_FILE_TYPE_GPX
+        "fit" -> ROUTE_PLAN_FILE_TYPE_FIT
+        "tcx" -> ROUTE_PLAN_FILE_TYPE_TCX
+        "xml" -> ROUTE_PLAN_FILE_TYPE_XML
+        else -> ROUTE_PLAN_FILE_TYPE_CNX
     }
 
     private fun buildRoutePlanDeletePb(fileId: Long, ext: String): ByteArray {

@@ -58,6 +58,16 @@ object UploadPipeline {
              *  upload, null when skipped (no fix / device rejected). */
             val seedLat: Double? = null,
             val seedLon: Double? = null,
+            /** True when the post-upload ROUTE_PLAN FILE_USE landed
+             *  cleanly and the device entered navigation mode. False
+             *  when the upload succeeded but the device refused the
+             *  activation (route stays on the device for later
+             *  manual selection). Null when the navigation step
+             *  wasn't requested. */
+            val navStarted: Boolean? = null,
+            /** Current device navigation status from ROUTE_PLAN
+             *  LIST_GET — populated by `navStatus()`. */
+            val navStatus: FileTransfer.NavStatus? = null,
         ) : Result()
         data class Failure(val reason: String, val status: Int = -1) : Result()
     }
@@ -171,6 +181,29 @@ object UploadPipeline {
                 fileExtension = "cnx",
             )
             if (r.success) {
+                // Auto-start navigation. Mirrors the official app's
+                // "send and use" flow (RoadBookSearchActivity →
+                // setRoutePlanFile in the smali); the user already
+                // committed to navigating by hitting Upload, so any
+                // intermediate "now pick the route on the device"
+                // step is friction. Failure here doesn't fail the
+                // upload — the file is already on the device and
+                // can be activated manually.
+                val nav = try {
+                    FileTransfer.startNavigation(
+                        transport = transport,
+                        fileId = fileId,
+                        fileExtension = "cnx",
+                        name = fileName,
+                        totalDistanceM = route.distanceM.toLong(),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "start-navigation: exception ${e.message}")
+                    FileTransfer.UploadResult(false, "exception: ${e.message}", -1)
+                }
+                if (!nav.success) {
+                    Log.w(TAG, "start-navigation rejected (status=${nav.status}): ${nav.message}")
+                }
                 Result.Success(
                     status = r.status,
                     bytesSent = cnx.size,
@@ -181,6 +214,7 @@ object UploadPipeline {
                     agpsBytes = agpsBytes,
                     seedLat = seedFix?.latitude,
                     seedLon = seedFix?.longitude,
+                    navStarted = nav.success,
                 )
             } else {
                 Result.Failure(r.message, r.status)
@@ -407,6 +441,49 @@ object UploadPipeline {
             transport.open()
             val entries = FileTransfer.listRoutes(transport)
             Result.Success(deviceName = name, deviceMac = mac, routes = entries)
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    // ---- Nav-status (PROTOCOL.md §7.3) --------------------------------
+
+    @SuppressLint("MissingPermission")
+    suspend fun navStatus(context: Context): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, name, mac) = transportSetup
+        return try {
+            transport.open()
+            val ns = FileTransfer.navStatus(transport)
+            Result.Success(deviceName = name, deviceMac = mac, navStatus = ns)
+        } catch (e: Exception) {
+            Result.Failure("BLE error: ${e.message}")
+        } finally {
+            transport.runCatching { close() }
+        }
+    }
+
+    // ---- Delete by id (FILES_DEL) ------------------------------------
+
+    @SuppressLint("MissingPermission")
+    suspend fun deleteRouteById(
+        context: Context,
+        fileId: Long,
+        name: String,
+        fileExtension: String = "cnx",
+    ): Result {
+        val transportSetup = openPairedTransport(context) ?: return Result.Failure("no paired device")
+        val (transport, _, _) = transportSetup
+        return try {
+            transport.open()
+            val r = FileTransfer.deleteRoutesById(
+                transport = transport,
+                targets = listOf(FileTransfer.DeleteTarget(fileId, name, fileExtension)),
+            )
+            if (r.success) Result.Success(status = r.status, fileId = fileId)
+            else Result.Failure(r.message, r.status)
         } catch (e: Exception) {
             Result.Failure("BLE error: ${e.message}")
         } finally {

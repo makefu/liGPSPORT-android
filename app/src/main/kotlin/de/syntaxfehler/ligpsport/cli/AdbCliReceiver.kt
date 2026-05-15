@@ -51,11 +51,17 @@ class AdbCliReceiver : BroadcastReceiver() {
             ACTION_DELETE_ROUTE -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_DELETE_ROUTE, intent,
             )
+            ACTION_DELETE_ROUTE_BY_ID -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_DELETE_ROUTE_BY_ID, intent,
+            )
             ACTION_LIST_ROUTES -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_LIST_ROUTES, intent,
             )
             ACTION_DELETE_ALL_ROUTES -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_DELETE_ALL_ROUTES, intent,
+            )
+            ACTION_NAV_STATUS -> dispatch(
+                ctx, reqId, UploadForegroundService.OP_NAV_STATUS, intent,
             )
             ACTION_SEND_AGPS -> dispatch(
                 ctx, reqId, UploadForegroundService.OP_SEND_AGPS, intent,
@@ -162,8 +168,10 @@ class AdbCliReceiver : BroadcastReceiver() {
         const val ACTION_UPLOAD = "de.syntaxfehler.ligpsport.action.UPLOAD"
         const val ACTION_PLAN_AND_UPLOAD = "de.syntaxfehler.ligpsport.action.PLAN_AND_UPLOAD"
         const val ACTION_DELETE_ROUTE = "de.syntaxfehler.ligpsport.action.DELETE_ROUTE"
+        const val ACTION_DELETE_ROUTE_BY_ID = "de.syntaxfehler.ligpsport.action.DELETE_ROUTE_BY_ID"
         const val ACTION_LIST_ROUTES = "de.syntaxfehler.ligpsport.action.LIST_ROUTES"
         const val ACTION_DELETE_ALL_ROUTES = "de.syntaxfehler.ligpsport.action.DELETE_ALL_ROUTES"
+        const val ACTION_NAV_STATUS = "de.syntaxfehler.ligpsport.action.NAV_STATUS"
         const val ACTION_SET_ROUTER = "de.syntaxfehler.ligpsport.action.SET_ROUTER"
         const val ACTION_LIST_ROUTERS = "de.syntaxfehler.ligpsport.action.LIST_ROUTERS"
         const val ACTION_MOCK_LOCATION = "de.syntaxfehler.ligpsport.action.MOCK_LOCATION"

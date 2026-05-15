@@ -81,8 +81,10 @@
                 <action android:name="de.syntaxfehler.ligpsport.action.UPLOAD" />
                 <action android:name="de.syntaxfehler.ligpsport.action.PLAN_AND_UPLOAD" />
                 <action android:name="de.syntaxfehler.ligpsport.action.DELETE_ROUTE" />
+                <action android:name="de.syntaxfehler.ligpsport.action.DELETE_ROUTE_BY_ID" />
                 <action android:name="de.syntaxfehler.ligpsport.action.LIST_ROUTES" />
                 <action android:name="de.syntaxfehler.ligpsport.action.DELETE_ALL_ROUTES" />
+                <action android:name="de.syntaxfehler.ligpsport.action.NAV_STATUS" />
                 <action android:name="de.syntaxfehler.ligpsport.action.SET_ROUTER" />
                 <action android:name="de.syntaxfehler.ligpsport.action.LIST_ROUTERS" />
                 <action android:name="de.syntaxfehler.ligpsport.action.MOCK_LOCATION" />

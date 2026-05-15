@@ -63,8 +63,10 @@ class UploadForegroundService : Service() {
                     OP_UPLOAD -> doUpload(intent, reqId)
                     OP_PLAN_AND_UPLOAD -> doPlanAndUpload(intent, reqId)
                     OP_DELETE_ROUTE -> doDeleteRoute(intent, reqId)
+                    OP_DELETE_ROUTE_BY_ID -> doDeleteRouteById(intent, reqId)
                     OP_LIST_ROUTES -> doListRoutes(reqId)
                     OP_DELETE_ALL_ROUTES -> doDeleteAllRoutes(intent, reqId)
+                    OP_NAV_STATUS -> doNavStatus(reqId)
                     OP_SEND_AGPS -> doSendAgps(reqId)
                     OP_SEND_LOCATION -> doSendLocation(reqId)
                     else -> AdbResult.emit(
@@ -216,6 +218,45 @@ class UploadForegroundService : Service() {
         emitResult("DELETE_ROUTE", reqId, res)
     }
 
+    private suspend fun doDeleteRouteById(intent: Intent, reqId: String) {
+        val fileId = intent.getLongExtra(EXTRA_FILE_ID, -1L)
+        val ext = intent.getStringExtra(EXTRA_EXT) ?: "cnx"
+        val name = intent.getStringExtra(EXTRA_NAME) ?: fileId.toString()
+        if (fileId < 0) {
+            AdbResult.emit(
+                "DELETE_ROUTE_BY_ID", reqId, AdbResult.Status.FAIL,
+                reason = "missing or invalid file_id",
+            )
+            return
+        }
+        val res = UploadPipeline.deleteRouteById(this, fileId = fileId, name = name, fileExtension = ext)
+        emitResult("DELETE_ROUTE_BY_ID", reqId, res)
+    }
+
+    private suspend fun doNavStatus(reqId: String) {
+        when (val res = UploadPipeline.navStatus(this)) {
+            is UploadPipeline.Result.Success -> {
+                val ns = res.navStatus
+                val extra = buildMap<String, String> {
+                    res.deviceName?.let { put("name", it) }
+                    res.deviceMac?.let { put("mac", it) }
+                    if (ns != null) {
+                        put("is_navigating", ns.isNavigating.toString())
+                        ns.activeRouteId?.let { put("active_route_id", it.toString()) }
+                        if (ns.activeRouteName.isNotEmpty()) {
+                            put("active_route_name", ns.activeRouteName)
+                        }
+                    } else {
+                        put("is_navigating", "unknown")
+                    }
+                }
+                AdbResult.emit("NAV_STATUS", reqId, AdbResult.Status.OK, extra)
+            }
+            is UploadPipeline.Result.Failure ->
+                AdbResult.emit("NAV_STATUS", reqId, AdbResult.Status.FAIL, reason = res.reason)
+        }
+    }
+
     private fun readGpxBytes(intent: Intent): ByteArray? {
         // Preferred for the harness: base64-encoded inline GPX.
         // Sidesteps Android 11+ scoped-storage friction with /sdcard.
@@ -248,6 +289,7 @@ class UploadForegroundService : Service() {
                     // harness greps these by exact value.
                     res.seedLat?.let { put("seed_lat", String.format(java.util.Locale.US, "%.5f", it)) }
                     res.seedLon?.let { put("seed_lon", String.format(java.util.Locale.US, "%.5f", it)) }
+                    res.navStarted?.let { put("nav_started", it.toString()) }
                     if (res.bytesSent > 0) put("cnx_bytes", res.bytesSent.toString())
                     put("device_status", res.status.toString())
                 }
@@ -320,8 +362,10 @@ class UploadForegroundService : Service() {
         const val OP_UPLOAD = "UPLOAD"
         const val OP_PLAN_AND_UPLOAD = "PLAN_AND_UPLOAD"
         const val OP_DELETE_ROUTE = "DELETE_ROUTE"
+        const val OP_DELETE_ROUTE_BY_ID = "DELETE_ROUTE_BY_ID"
         const val OP_LIST_ROUTES = "LIST_ROUTES"
         const val OP_DELETE_ALL_ROUTES = "DELETE_ALL_ROUTES"
+        const val OP_NAV_STATUS = "NAV_STATUS"
         const val OP_SEND_AGPS = "SEND_AGPS"
         const val OP_SEND_LOCATION = "SEND_LOCATION"
 

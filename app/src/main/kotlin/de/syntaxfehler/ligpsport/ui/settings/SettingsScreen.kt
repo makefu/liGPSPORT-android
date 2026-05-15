@@ -16,7 +16,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -27,12 +32,21 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.size
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import de.syntaxfehler.ligpsport.ble.FileTransfer
+import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -123,6 +137,216 @@ fun SettingsScreen(
                         routerPrefs.set(p.id)
                     },
                 )
+            }
+
+            // --- Routes on device -----------------------------------
+            item { DeviceRoutesSection(paired = pairedMac != null) }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRoutesSection(paired: Boolean) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var routes by remember { mutableStateOf<List<FileTransfer.RouteEntry>>(emptyList()) }
+    var pendingDelete by remember { mutableStateOf<FileTransfer.RouteEntry?>(null) }
+    var pendingDeleting by remember { mutableStateOf(false) }
+
+    fun refresh() {
+        if (!paired) return
+        loading = true; error = null
+        scope.launch {
+            val res = withContext(Dispatchers.IO) { UploadPipeline.listRoutes(ctx) }
+            when (res) {
+                is UploadPipeline.Result.Success -> routes = res.routes
+                is UploadPipeline.Result.Failure -> error = res.reason
+            }
+            loading = false
+        }
+    }
+
+    LaunchedEffect(paired) { if (paired) refresh() }
+
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Routes on device",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IconButton(
+                onClick = ::refresh,
+                enabled = paired && !loading,
+                modifier = Modifier.testTag("refresh_routes"),
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+            }
+        }
+        if (!paired) {
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Text(
+                    "Pair a device to see its uploaded routes.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            return@Column
+        }
+        if (loading) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text("Loading routes…", style = MaterialTheme.typography.bodyMedium)
+            }
+            return@Column
+        }
+        error?.let {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            ) {
+                Text(
+                    it,
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            return@Column
+        }
+        if (routes.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Text(
+                    "No routes uploaded.",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (r in routes) {
+                    RouteRow(
+                        entry = r,
+                        onDelete = { pendingDelete = r },
+                    )
+                }
+            }
+        }
+    }
+
+    val target = pendingDelete
+    if (target != null) {
+        AlertDialog(
+            onDismissRequest = { if (!pendingDeleting) pendingDelete = null },
+            title = { Text("Delete route?") },
+            text = {
+                Column {
+                    Text(
+                        target.name.ifEmpty { "id=${target.id}" },
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (target.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) {
+                        Text(
+                            "The active navigation route is firmware-protected — " +
+                                "the device may report success but keep the route. " +
+                                "Stop navigation on the device first.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !pendingDeleting,
+                    onClick = {
+                        pendingDeleting = true
+                        scope.launch {
+                            val res = withContext(Dispatchers.IO) {
+                                UploadPipeline.deleteRouteById(
+                                    ctx,
+                                    fileId = target.id,
+                                    name = target.name.ifEmpty { target.id.toString() },
+                                    fileExtension = when (target.fileType) {
+                                        2 -> "gpx"
+                                        3 -> "fit"
+                                        else -> "cnx"
+                                    },
+                                )
+                            }
+                            pendingDeleting = false
+                            pendingDelete = null
+                            when (res) {
+                                is UploadPipeline.Result.Success -> refresh()
+                                is UploadPipeline.Result.Failure -> error = res.reason
+                            }
+                        }
+                    },
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !pendingDeleting,
+                    onClick = { pendingDelete = null },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun RouteRow(
+    entry: FileTransfer.RouteEntry,
+    onDelete: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .testTag("route_${entry.id}"),
+    ) {
+        Row(
+            Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (entry.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) {
+                Icon(
+                    Icons.Filled.Navigation,
+                    contentDescription = "Active route",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    entry.name.ifEmpty { "(unnamed)" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "id=${entry.id}" +
+                        (if (entry.totalDistanceM > 0) " • ${entry.totalDistanceM} m" else "") +
+                        (if (entry.status == FileTransfer.ROUTE_PLAN_FILE_STATUS_USED) " • active" else ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(
+                onClick = onDelete,
+                modifier = Modifier.testTag("delete_route_${entry.id}"),
+            ) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete route")
             }
         }
     }

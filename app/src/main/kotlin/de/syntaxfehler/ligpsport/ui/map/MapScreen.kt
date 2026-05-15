@@ -405,6 +405,15 @@ fun MapScreen(
             }
         }
 
+        // Bottom-left navigation-status pill. Polls the BSC200's
+        // ROUTE_PLAN LIST_GET every ~15 s (PROTOCOL.md §7.3) and reports
+        // whether a route is currently active.
+        NavStatusOverlay(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 16.dp, bottom = 24.dp),
+        )
+
         // Stacked FABs in the bottom-right corner. Extracted into a
         // separate composable so the visibility-gating logic ("my
         // location FAB is only present when a fix is available") can

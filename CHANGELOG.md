@@ -4,6 +4,71 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-05-15
+
+Auto-start navigation on the BSC200 after every route upload — the
+device flips into navigation mode without the rider having to pick
+the route on the bike computer. Adds an on-screen nav-status pill
+and a route-management section in Settings. Tracks the protocol
+fixes from `ligpsport` Python v1.2.0 (gen-4 single merged write +
+`name` / `total_distance` fields on `FILE_USE`).
+
+### Added
+
+- **Auto-navigation after upload**: every `UPLOAD` /
+  `PLAN_AND_UPLOAD` (button or adb) issues a follow-up
+  `ROUTE_PLAN FILE_USE` once the upload acks, activating the route
+  on the BSC200 and switching the device into navigation mode. The
+  `RESULT` line gains `nav_started=true|false`. Mirrors the
+  iGPSPORT app's "send and use" flow. PROTOCOL.md §7.2.
+- **`NAV_STATUS` adb action** + bottom-left **nav-status pill** on
+  the map: polls `ROUTE_PLAN LIST_GET` every ~15 s, scans for the
+  `enum_USED_STATUS` entry, and shows one of
+  *Pair device first* / *Connecting…* / *Navigating: <route>* /
+  *No active route*. PROTOCOL.md §7.3. The pill keeps showing the
+  previous value while a poll is in flight so transient BLE
+  failures don't flicker the UI.
+- **Routes-on-device section in Settings**: lists every route the
+  BSC200 holds (id, name, distance, active flag) and lets the user
+  delete inactive routes individually. Active route gets a guard
+  dialog noting it's firmware-protected. Uses the new
+  `DELETE_ROUTE_BY_ID` adb action under the hood.
+- **`DELETE_ROUTE_BY_ID` adb action**: single-id wrapper around
+  `ROUTE_PLAN FILES_DEL` (op = 6) with `line_id` + full
+  `route_plan_info_msg` (PROTOCOL.md §7.4 — sending only one or
+  the other is silently no-op'd).
+- `FileTransfer.deviceStatusName` — wire-byte → name lookup for
+  `DeviceReturnStatus`, including the Navigation block (65, 66 =
+  `NavigationRouteDoesNotExist`). Surfaces the right name in
+  `RESULT … reason=` for FILE_USE refusals.
+
+### Fixed
+
+- **`FILE_USE` wire format (gen-4 merged write)**: the BSC200
+  reports `getGeneration() == 4` and takes the
+  `setRoutePlanFile`/`send$lambda-135` merged-write branch —
+  *one* write of (20-byte head ‖ protobuf body) on the FOURTH
+  characteristic, *not* the body/header split across two
+  characteristics. The earlier two-write path was silently
+  dropped by the firmware (`nav_started=false`). Live-verified
+  against the iGPSPORT app's snoop_start.log capture in the
+  Python reference repo.
+- **`FILE_USE` protobuf**: the nested `route_plan_info_msg` now
+  carries the required `name` and `total_distance` fields. BSC200
+  firmware validates `name` and drops requests that omit it; the
+  captured app fills `str(file_id)` for unnamed routes.
+- **`ROUTE_PLAN LIST_GET` returns the routes the device holds**:
+  the request now includes a `route_list_get_msg` index range
+  (fields 3 + 4). Without it the BSC200 silently returned an
+  empty list — `LIST_ROUTES` always reported `count=0`. Fixes the
+  routes-on-device section + the nav-status scan.
+- **`FILES_DEL` for the bulk-delete path** populates both
+  `line_id` and `route_plan_info_msg` per target and uses the
+  gen-4 single merged write. The earlier wire format (only
+  `line_id`, on control channel) was no-op'd by the firmware.
+
+[0.1.3]: https://github.com/makefu/liGPSPORT-android/releases/tag/v0.1.3
+
 ## [0.1.2] — 2026-05-15
 
 ### Added
