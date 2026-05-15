@@ -163,7 +163,7 @@ object UploadPipeline {
             // assistance data while the user is still putting the bike
             // away. Best-effort: a fetch failure doesn't fail the
             // route upload — we just log it and proceed.
-            val agpsBytes = uploadAgpsBestEffort(transport)
+            val agpsBytes = uploadAgpsBestEffort(context, transport)
 
             // Inject the phone's current location as a starting-point
             // prior. AGPS supplies "which satellite is where in orbit";
@@ -304,7 +304,7 @@ object UploadPipeline {
         val (transport, name, mac) = transportSetup
         return try {
             transport.open()
-            val sent = uploadAgpsBestEffort(transport, suppressErrors = false)
+            val sent = uploadAgpsBestEffort(context, transport, suppressErrors = false)
                 ?: return Result.Failure("AGPS upload failed — see logcat for details")
             Result.Success(
                 deviceName = name,
@@ -326,15 +326,19 @@ object UploadPipeline {
      * proceed with whatever they were going to do next.
      */
     private suspend fun uploadAgpsBestEffort(
+        context: Context,
         transport: Transport,
         suppressErrors: Boolean = true,
     ): Int? {
-        // BuildConfig.AGPS_TOKEN takes precedence (lets users with
-        // their own u-blox AssistNow account swap in their token);
-        // when empty, AgpsClient falls back to fetching the token
-        // from iGPSport's prod config endpoint, mirroring the
-        // official app. Either way the seed runs.
-        val overrideToken = BuildConfig.AGPS_TOKEN.takeIf { it.isNotBlank() }
+        // Token resolution order:
+        //   1. Runtime override from Settings → AgpsTokenStore.
+        //   2. BuildConfig.AGPS_TOKEN — build-time injection.
+        //   3. null → AgpsClient falls back to fetching the token
+        //      from iGPSport's prod config endpoint, mirroring the
+        //      official app.
+        val overrideToken =
+            de.syntaxfehler.ligpsport.data.AgpsTokenStore(context).get()
+                ?: BuildConfig.AGPS_TOKEN.takeIf { it.isNotBlank() }
         val client = AgpsClient()
         val data = try {
             val t0 = System.currentTimeMillis()

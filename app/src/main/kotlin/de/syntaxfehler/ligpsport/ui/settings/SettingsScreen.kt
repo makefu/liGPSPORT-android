@@ -17,8 +17,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,8 +47,11 @@ import androidx.compose.foundation.layout.size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import de.syntaxfehler.ligpsport.BuildConfig
+import de.syntaxfehler.ligpsport.agps.AgpsClient
 import de.syntaxfehler.ligpsport.ble.FileTransfer
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
+import de.syntaxfehler.ligpsport.data.AgpsTokenStore
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -141,6 +146,9 @@ fun SettingsScreen(
 
             // --- Routes on device -----------------------------------
             item { DeviceRoutesSection(paired = pairedMac != null) }
+
+            // --- AGPS token (kept at the bottom — advanced) ---------
+            item { AgpsTokenSection() }
         }
     }
 }
@@ -413,6 +421,216 @@ private fun RouteRow(
             }
         }
     }
+}
+
+/**
+ * AGPS-token section. Lets advanced users override the runtime
+ * AssistNow token without re-building the APK.
+ *
+ * The actual token value is never displayed — the entry only reports
+ * one of three states:
+ *   - **Set (from settings)** — runtime override active.
+ *   - **Set (build-time)** — `BuildConfig.AGPS_TOKEN` is non-empty.
+ *   - **Auto (iGPSport backend)** — no override; client falls back
+ *     to fetching the token from `prod.en.igpsport.com`, same as the
+ *     official app.
+ *
+ * Tap → dialog with a masked text field, Test / Save / Cancel.
+ * Test fires a real request against AssistNow Online and surfaces
+ * the result inline.
+ */
+@Composable
+private fun AgpsTokenSection() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { AgpsTokenStore(ctx) }
+    var userSet by remember { mutableStateOf(store.isSet()) }
+    val buildSet = remember { BuildConfig.AGPS_TOKEN.isNotBlank() }
+    var dialogOpen by remember { mutableStateOf(false) }
+
+    val sourceLabel = when {
+        userSet -> "Set — from Settings"
+        buildSet -> "Set — from build (LIGPSPORT_AGPS_TOKEN)"
+        else -> "Auto — iGPSport backend (default)"
+    }
+    val description =
+        "Override the u-blox AssistNow token used for AGPS pre-seeding. " +
+            "Leave on Auto for the same fallback the official app uses."
+
+    Column {
+        SectionLabel("AGPS token")
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .clickable { dialogOpen = true }
+                .testTag("agps_token_card"),
+        ) {
+            Row(
+                Modifier.padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.Key, contentDescription = null)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        sourceLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+
+    if (dialogOpen) {
+        AgpsTokenDialog(
+            currentlySet = userSet,
+            onDismiss = { dialogOpen = false },
+            onSave = { token ->
+                store.set(token)
+                userSet = true
+                dialogOpen = false
+            },
+            onClear = {
+                store.clear()
+                userSet = false
+                dialogOpen = false
+            },
+            onTest = { tokenToTest ->
+                // Fire a real GetOnlineData.ashx request and return a
+                // human-readable result for the caller to surface.
+                val client = AgpsClient()
+                try {
+                    val bytes = withContext(Dispatchers.IO) {
+                        client.fetchOnline(tokenToTest.takeIf { it.isNotBlank() })
+                    }
+                    TestResult.Ok(bytes.size)
+                } catch (e: Exception) {
+                    TestResult.Fail(e.message ?: e.javaClass.simpleName)
+                } finally {
+                    client.runCatching { close() }
+                }
+            },
+            scope = scope,
+        )
+    }
+}
+
+private sealed interface TestResult {
+    data class Ok(val bytes: Int) : TestResult
+    data class Fail(val reason: String) : TestResult
+}
+
+@Composable
+private fun AgpsTokenDialog(
+    currentlySet: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+    onClear: () -> Unit,
+    onTest: suspend (String) -> TestResult,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    var input by remember { mutableStateOf("") }
+    var testing by remember { mutableStateOf(false) }
+    var lastTest by remember { mutableStateOf<TestResult?>(null) }
+
+    AlertDialog(
+        onDismissRequest = { if (!testing) onDismiss() },
+        title = { Text(if (currentlySet) "Change AGPS token" else "Set AGPS token") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    if (currentlySet) {
+                        "A token is currently set. Enter a new value to replace it, " +
+                            "or tap Remove to revert to the default (Auto)."
+                    } else {
+                        "Enter a u-blox AssistNow developer token. Leaving it " +
+                            "empty keeps the default (Auto — iGPSport backend)."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text("Token") },
+                    placeholder = { Text("paste token here") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("agps_token_input"),
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        enabled = !testing,
+                        onClick = {
+                            testing = true
+                            lastTest = null
+                            scope.launch {
+                                val r = onTest(input)
+                                lastTest = r
+                                testing = false
+                            }
+                        },
+                        modifier = Modifier.testTag("agps_token_test"),
+                    ) {
+                        if (testing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Text("  Testing…")
+                        } else {
+                            Text("Test")
+                        }
+                    }
+                    val result = lastTest
+                    if (result != null) {
+                        when (result) {
+                            is TestResult.Ok -> Text(
+                                "OK (${result.bytes} B)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            is TestResult.Fail -> Text(
+                                "Failed: ${result.reason}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !testing && input.isNotBlank(),
+                onClick = { onSave(input) },
+                modifier = Modifier.testTag("agps_token_save"),
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (currentlySet) {
+                    TextButton(
+                        enabled = !testing,
+                        onClick = onClear,
+                        modifier = Modifier.testTag("agps_token_remove"),
+                    ) { Text("Remove") }
+                }
+                TextButton(enabled = !testing, onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }
 
 @Composable
