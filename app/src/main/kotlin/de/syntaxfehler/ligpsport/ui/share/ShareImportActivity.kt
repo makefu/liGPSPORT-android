@@ -8,10 +8,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -20,15 +25,19 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import de.syntaxfehler.ligpsport.route.CnxEncoder
 import de.syntaxfehler.ligpsport.route.GpxParser
 import de.syntaxfehler.ligpsport.ui.theme.LigpsportTheme
+import de.syntaxfehler.ligpsport.ui.upload.sanitiseFileName
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -57,12 +66,18 @@ class ShareImportActivity : ComponentActivity() {
     }
 }
 
+private enum class UploadState { Idle, Uploading, Done, Error }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf("Loading shared GPX…") }
     var cnxSize by remember { mutableStateOf<Int?>(null) }
+    var gpxBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var gpxName by remember { mutableStateOf<String?>(null) }
+    var uploadState by remember { mutableStateOf(UploadState.Idle) }
 
     LaunchedEffect(uri) {
         if (uri == null) {
@@ -76,6 +91,8 @@ private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
             }
             val parsed = withContext(Dispatchers.Default) { GpxParser.parse(bytes) }
             val cnx = withContext(Dispatchers.Default) { CnxEncoder.encode(parsed) }
+            gpxBytes = bytes
+            gpxName = parsed.name
             cnxSize = cnx.size
             status = "Loaded ${parsed.points.size} points from \"${parsed.name}\"."
         } catch (e: Exception) {
@@ -90,8 +107,52 @@ private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
         ) {
             Text(status, modifier = Modifier.testTag("share_status"))
             cnxSize?.let { Text("CNX: $it bytes") }
-            Button(onClick = onFinish, modifier = Modifier.testTag("share_close")) {
-                Text("Close")
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onFinish,
+                    modifier = Modifier.testTag("share_close"),
+                ) {
+                    Text("Close")
+                }
+
+                if (gpxBytes != null && uploadState != UploadState.Done) {
+                    Button(
+                        onClick = {
+                            uploadState = UploadState.Uploading
+                            scope.launch {
+                                val fileName = sanitiseFileName(gpxName) ?: "shared_route"
+                                val result = withContext(Dispatchers.IO) {
+                                    UploadPipeline.uploadGpx(ctx, gpxBytes!!, fileName = fileName)
+                                }
+                                when (result) {
+                                    is UploadPipeline.Result.Success -> {
+                                        uploadState = UploadState.Done
+                                        status = "Uploaded to ${result.deviceName ?: "device"}!"
+                                    }
+                                    is UploadPipeline.Result.Failure -> {
+                                        uploadState = UploadState.Error
+                                        status = "Upload failed: ${result.reason}"
+                                    }
+                                }
+                            }
+                        },
+                        enabled = uploadState != UploadState.Uploading,
+                        modifier = Modifier.testTag("share_upload"),
+                    ) {
+                        if (uploadState == UploadState.Uploading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        } else {
+                            Text("Upload")
+                        }
+                    }
+                }
             }
         }
     }
