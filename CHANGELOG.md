@@ -6,16 +6,61 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-05-17
+
+Recorded-activities management on top of v1.1.0's route editing,
+plus two map-screen regression fixes that turned out to be very
+visible on real hardware: the auto-planner thrashing on every GPS
+heartbeat, and the upload button lying about whether the route on
+screen had actually been sent.
+
 ### Added
-- Activities sub-section in Settings — list, download (FIT), delete recorded
-  activities from the BSC200. Delete-all guarded by a confirmation dialog.
-- adb harness actions: LIST_ACTIVITIES, DOWNLOAD_ACTIVITY, DELETE_ACTIVITY,
-  DELETE_ALL_ACTIVITIES.
+
+- **Activities sub-section in Settings** — list, download (FIT),
+  delete recorded activities from the BSC200. Delete-all is guarded
+  by a confirmation dialog. Backed by new `FileTransfer`
+  primitives: `listActivities` / `downloadActivity` /
+  `deleteActivity` / `deleteAllActivities`.
+- **adb harness actions** for the same operations:
+  `LIST_ACTIVITIES`, `DOWNLOAD_ACTIVITY`, `DELETE_ACTIVITY`,
+  `DELETE_ALL_ACTIVITIES`.
 
 ### Changed
-- Settings: Routes-on-device moved out of the main list into a "Routes on
-  device" sub-section that opens its own screen, alongside the new
-  Activities one.
+
+- **Settings: Routes-on-device moved into its own sub-screen**,
+  alongside the new Activities one. The main Settings list stays
+  short; both device-files screens are reachable via tappable rows.
+
+### Fixed
+
+- **Auto-planner thrashed forever on stationary GPS jitter.** The
+  location overlay pushes a fresh `Point` every 2 s even when the
+  device is sitting still; the auto-plan `LaunchedEffect` keyed off
+  `currentLocation` directly, so every drift cancelled the in-flight
+  plan and started a new one. The status pill flickered between
+  *Planning…* and *Route ready* indefinitely and the user could
+  never tap Upload. Auto-plan is now extracted into an
+  `AutoPlanEffect` composable keyed on a derived `hasInitialFix:
+  Boolean` (null → non-null), so the first fix fires one plan and
+  subsequent drift stays inert. Re-planning still happens on
+  destination / via / start-override edits — and the effect body
+  reads the latest `currentLocation` when it fires, so picking a
+  destination after the GPS stabilises still routes from where the
+  user is right now.
+- **Upload button stuck on "Uploaded ✓" after editing the route.**
+  Dragging an intermediate or the Start marker after a successful
+  upload changed the planned GPX on screen but the button still
+  read green — the user couldn't tell their new route hadn't been
+  sent. Two fixes: a `RouteEditUploadReset` composable flips
+  `Success` / `Failed` back to `Idle` on any route-input change
+  (destination, vias, start override) without clobbering an
+  in-flight `Uploading`; and the upload completion handler now
+  snapshots the *full* route (destination + vias + start override)
+  and surfaces `Idle` instead of `Success` if any of those changed
+  while the BLE round-trip was in flight. Pinned by
+  `MapScreenEffectsTest` (9 regression cases).
+
+[1.2.0]: https://github.com/makefu/liGPSPORT-android/releases/tag/v1.2.0
 
 ## [1.1.0] — 2026-05-15
 

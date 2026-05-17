@@ -252,15 +252,21 @@ fun MapScreen(
                 )
                 plannedGpx = null
                 clearRouteOverlay(mapView)
-                // Reset the upload-button outcome on destination change.
-                // While the upload is in flight, leave the button alone
-                // — the spinner stays visible until that upload settles.
-                if (uploadState !is UploadButtonState.Uploading) {
-                    uploadState = UploadButtonState.Idle
-                }
             }
         }
     }
+
+    // Any edit to the planned route — destination, vias, or an explicit
+    // start override — invalidates the previous upload outcome. Reset
+    // the upload-button so it reads "Upload" again once a fresh plan is
+    // ready. An in-flight upload is left alone so the result can land.
+    RouteEditUploadReset(
+        destination = destination,
+        intermediates = intermediates,
+        startOverride = startOverride,
+        uploadState = uploadState,
+        onReset = { uploadState = UploadButtonState.Idle },
+    )
 
     // Permission grant flips us from "overlay constructed but not
     // listening" to "overlay actively requesting fixes" without
@@ -503,41 +509,53 @@ fun MapScreen(
         )
 
         // Auto-plan whenever the destination, the list of intermediate
-        // stops, or our GPS fix changes. The Plan button is gone — any
-        // edit (new destination, new intermediate, dragged marker) is
-        // the user's commitment, and a route preview is the immediate
-        // feedback. They still get to back out before Upload.
-        LaunchedEffect(destination, intermediates, startOverride, currentLocation) {
-            val dest = destination ?: return@LaunchedEffect
-            val start = startOverride ?: currentLocation ?: run {
-                statusMessage = "Waiting for GPS fix…"
-                return@LaunchedEffect
-            }
-            val provider = RouterRegistry.byId(RouterPreferences(ctx).get())
-                ?: RouterRegistry.default
-            statusMessage = "Planning route via ${provider.displayName}…"
-            planningRoute = true
-            try {
-                val end = Point(dest.lat, dest.lon)
-                val via = intermediates.map { Point(it.lat, it.lon) }
-                val gpx = withContext(Dispatchers.IO) {
-                    provider.planGpx(start, end, intermediates = via)
+        // stops, or the explicit start override changes — or when the
+        // GPS arrives for the first time. The Plan button is gone —
+        // any edit (new destination, new intermediate, dragged marker)
+        // is the user's commitment, and a route preview is the
+        // immediate feedback. They still get to back out before Upload.
+        //
+        // We key off a `hasInitialFix` boolean rather than
+        // `currentLocation` itself so subsequent GPS drift (the
+        // overlay polls every 2 s) does NOT re-fire the planner.
+        // The route is to a static destination, not a follow-me nav
+        // update — without this guard, the UI thrashed between
+        // "Planning…" and "Route ready" forever and the user could
+        // never tap Upload. If the user genuinely wants to re-plan
+        // from a different origin, the Start marker is draggable
+        // (see [setStartMarker] / [startOverride]).
+        AutoPlanEffect(
+            destination = destination,
+            intermediates = intermediates,
+            startOverride = startOverride,
+            currentLocation = currentLocation,
+            onNoFix = { statusMessage = "Waiting for GPS fix…" },
+            onPlan = onPlan@{ start, dest, via ->
+                val provider = RouterRegistry.byId(RouterPreferences(ctx).get())
+                    ?: RouterRegistry.default
+                statusMessage = "Planning route via ${provider.displayName}…"
+                planningRoute = true
+                try {
+                    val end = Point(dest.lat, dest.lon)
+                    val gpx = withContext(Dispatchers.IO) {
+                        provider.planGpx(start, end, intermediates = via)
+                    }
+                    clearRouteOverlay(mapView)
+                    drawRoute(mapView, gpx)
+                    RouteSessionStore.setPlannedGpx(gpx)
+                    plannedGpx = gpx
+                    statusMessage = if (via.isEmpty()) {
+                        "Route ready — tap Upload to send."
+                    } else {
+                        "Route via ${via.size} stop${if (via.size == 1) "" else "s"} ready."
+                    }
+                } catch (e: Exception) {
+                    statusMessage = "Routing failed: ${e.message}"
+                } finally {
+                    planningRoute = false
                 }
-                clearRouteOverlay(mapView)
-                drawRoute(mapView, gpx)
-                RouteSessionStore.setPlannedGpx(gpx)
-                plannedGpx = gpx
-                statusMessage = if (via.isEmpty()) {
-                    "Route ready — tap Upload to send."
-                } else {
-                    "Route via ${via.size} stop${if (via.size == 1) "" else "s"} ready."
-                }
-            } catch (e: Exception) {
-                statusMessage = "Routing failed: ${e.message}"
-            } finally {
-                planningRoute = false
-            }
-        }
+            },
+        )
 
         // Render the Start marker. Defaults to the live fix; once the
         // user drags it, [startOverride] takes precedence so subsequent
@@ -604,24 +622,28 @@ fun MapScreen(
                 onUpload = onUpload@{
                     val gpx = plannedGpx ?: return@onUpload
                     val fileName = sanitiseFileName(dest.label) ?: "route"
-                    // Capture which destination was uploaded so we can
-                    // check after the BLE round-trip whether the user
-                    // picked a new point in the meantime. The button
-                    // should only report Success/Failed when the
-                    // destination still matches — otherwise reset to
-                    // Idle so it reads "Upload" for the new point.
+                    // Snapshot the full route the user committed to. If
+                    // any of these change while the upload is in flight
+                    // — destination drag, via add/move, start drag —
+                    // the BLE round-trip's bytes no longer match what's
+                    // on screen, so we surface Idle (re-Upload) instead
+                    // of a misleading "Uploaded ✓".
                     val uploadedLat = dest.lat
                     val uploadedLon = dest.lon
+                    val uploadedVias = intermediates
+                    val uploadedStart = startOverride
                     uploadState = UploadButtonState.Uploading
                     scope.launch {
                         val res = withContext(Dispatchers.IO) {
                             UploadPipeline.uploadGpx(ctx, gpx, fileName = fileName)
                         }
                         val current = destination
-                        val destChanged = current == null ||
+                        val routeChanged = current == null ||
                             current.lat != uploadedLat ||
-                            current.lon != uploadedLon
-                        uploadState = if (destChanged) {
+                            current.lon != uploadedLon ||
+                            intermediates != uploadedVias ||
+                            startOverride != uploadedStart
+                        uploadState = if (routeChanged) {
                             UploadButtonState.Idle
                         } else when (res) {
                             is UploadPipeline.Result.Success ->
@@ -901,7 +923,70 @@ private sealed interface ButtonLeading {
     data class Icon(val icon: androidx.compose.ui.graphics.vector.ImageVector) : ButtonLeading
 }
 
-private data class Destination(val label: String, val lat: Double, val lon: Double)
+internal data class Destination(val label: String, val lat: Double, val lon: Double)
+
+/**
+ * Auto-plan the route whenever the user's *intent* changes —
+ * destination, vias, or an explicit start override — and once when
+ * the first GPS fix arrives. Subsequent drift in [currentLocation]
+ * (the location overlay polls every 2 s) does NOT re-fire [onPlan]:
+ * the planned route is for a static destination, and constant
+ * re-planning thrashed the status pill between "Planning…" and
+ * "Route ready", preventing the user from ever tapping Upload.
+ *
+ * The body still reads the latest [currentLocation] when it fires,
+ * so picking a destination after the GPS has been stable for a
+ * while still routes from where the user is right now.
+ */
+@Composable
+internal fun AutoPlanEffect(
+    destination: Destination?,
+    intermediates: List<Waypoint>,
+    startOverride: Point?,
+    currentLocation: Point?,
+    onPlan: suspend (start: Point, dest: Destination, vias: List<Point>) -> Unit,
+    onNoFix: () -> Unit = {},
+) {
+    val hasInitialFix = currentLocation != null
+    LaunchedEffect(destination, intermediates, startOverride, hasInitialFix) {
+        val dest = destination ?: return@LaunchedEffect
+        val start = startOverride ?: currentLocation
+        if (start == null) {
+            onNoFix()
+            return@LaunchedEffect
+        }
+        onPlan(start, dest, intermediates.map { Point(it.lat, it.lon) })
+    }
+}
+
+/**
+ * Reset the upload-button outcome whenever the planned route is
+ * edited (destination, vias, or an explicit start override). Without
+ * this, dragging an intermediate or the start marker after a
+ * successful upload left the button stuck on "Uploaded ✓" while the
+ * actual plan on screen had moved on — the user couldn't tell their
+ * new route hadn't been sent.
+ *
+ * An in-flight upload (Uploading) is left alone so its result can
+ * still land on the button; the route-change check baked into the
+ * upload's completion handler will surface Idle in that case.
+ */
+@Composable
+internal fun RouteEditUploadReset(
+    destination: Destination?,
+    intermediates: List<Waypoint>,
+    startOverride: Point?,
+    uploadState: UploadButtonState,
+    onReset: () -> Unit,
+) {
+    LaunchedEffect(destination, intermediates, startOverride) {
+        if (uploadState is UploadButtonState.Success ||
+            uploadState is UploadButtonState.Failed
+        ) {
+            onReset()
+        }
+    }
+}
 
 /**
  * One intermediate stop the route must pass through. Holds a stable
