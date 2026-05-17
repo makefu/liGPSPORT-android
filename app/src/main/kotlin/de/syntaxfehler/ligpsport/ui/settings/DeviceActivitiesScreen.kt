@@ -1,5 +1,6 @@
 package de.syntaxfehler.ligpsport.ui.settings
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,9 +43,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import de.syntaxfehler.ligpsport.ble.DeviceStore
 import de.syntaxfehler.ligpsport.ble.FileTransfer
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,6 +80,7 @@ fun DeviceActivitiesScreen(onBack: () -> Unit) {
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var deletingAll by remember { mutableStateOf(false) }
     var downloadingTs by remember { mutableStateOf<Long?>(null) }
+    var sharingTs by remember { mutableStateOf<Long?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
     fun refresh() {
@@ -174,6 +179,7 @@ fun DeviceActivitiesScreen(onBack: () -> Unit) {
                     ActivityRow(
                         entry = e,
                         downloading = downloadingTs == e.timestamp,
+                        sharing = sharingTs == e.timestamp,
                         onDownload = {
                             downloadingTs = e.timestamp
                             scope.launch {
@@ -186,6 +192,38 @@ fun DeviceActivitiesScreen(onBack: () -> Unit) {
                                         snackbar.showSnackbar(
                                             "Saved to ${res.activitySavedPath ?: "?"}",
                                         )
+                                    is UploadPipeline.Result.Failure ->
+                                        snackbar.showSnackbar("Download failed: ${res.reason}")
+                                }
+                            }
+                        },
+                        onShare = {
+                            sharingTs = e.timestamp
+                            scope.launch {
+                                val res = withContext(Dispatchers.IO) {
+                                    UploadPipeline.downloadActivity(ctx, e.timestamp)
+                                }
+                                sharingTs = null
+                                when (res) {
+                                    is UploadPipeline.Result.Success -> {
+                                        val path = res.activitySavedPath
+                                        if (path != null) {
+                                            val file = File(path)
+                                            val uri = FileProvider.getUriForFile(
+                                                ctx,
+                                                "${ctx.packageName}.fileprovider",
+                                                file,
+                                            )
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "application/octet-stream"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            ctx.startActivity(
+                                                Intent.createChooser(shareIntent, "Share FIT file"),
+                                            )
+                                        }
+                                    }
                                     is UploadPipeline.Result.Failure ->
                                         snackbar.showSnackbar("Download failed: ${res.reason}")
                                 }
@@ -294,7 +332,9 @@ fun DeviceActivitiesScreen(onBack: () -> Unit) {
 private fun ActivityRow(
     entry: FileTransfer.ActivityListEntry,
     downloading: Boolean,
+    sharing: Boolean,
     onDownload: () -> Unit,
+    onShare: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -321,8 +361,19 @@ private fun ActivityRow(
                 )
             }
             IconButton(
+                onClick = onShare,
+                enabled = !sharing && !downloading,
+                modifier = Modifier.testTag("share_activity_${entry.timestamp}"),
+            ) {
+                if (sharing) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Share, contentDescription = "Share FIT")
+                }
+            }
+            IconButton(
                 onClick = onDownload,
-                enabled = !downloading,
+                enabled = !downloading && !sharing,
                 modifier = Modifier.testTag("download_activity_${entry.timestamp}"),
             ) {
                 if (downloading) {
