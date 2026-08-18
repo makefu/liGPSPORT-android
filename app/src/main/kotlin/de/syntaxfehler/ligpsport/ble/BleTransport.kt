@@ -305,6 +305,12 @@ class BleTransport(
     private fun wireUpCharacteristics(g: BluetoothGatt) {
         rxChars.clear()
         txChars.clear()
+        // Re-wiring means the characteristic objects the buffers were
+        // keyed against are gone, so any half-assembled frame left over
+        // belongs to a connection that no longer exists. Keeping it
+        // would prepend garbage to the first frame of the new one.
+        rxBuffers.clear()
+        rxExpected.clear()
         val pairs = listOf(
             Channel.CONTROL to (GattUuids.PRIMARY_SERVICE to (GattUuids.PRIMARY_RX to GattUuids.PRIMARY_TX)),
             Channel.DATA to (GattUuids.DATA_SERVICE to (GattUuids.DATA_RX to GattUuids.DATA_TX)),
