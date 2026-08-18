@@ -397,6 +397,29 @@ them — they're already encoded in code.
    noted in the smali as a split-write but the live BSC200
    firmware accepts only the merged form (PROTOCOL.md §6.4).
 
+9. **Receive buffers must stay per-channel.** The device *does*
+   emit frames on other channels during a long transfer, so a
+   shared `rxBuffer` splices foreign frames into the middle of a
+   file download. Reassembly counts bytes rather than tracking
+   frames, so the damage is invisible: the file comes out at
+   exactly the expected length with 20 bytes of protocol header
+   where ride data should be. Verified on a BSC300T — two
+   downloads of one activity diverged at byte 210,572 of 296,853,
+   one holding a valid `TYPE_REQUEST` frame (service=3) and the
+   other ride data, the files matching exactly at a 20-byte
+   shift. Downloaded FITs are now checked against their own CRC
+   (`route/FitFile.kt`) so a repeat of this fails loudly.
+
+10. **Activity timestamps are FIT-epoch** (seconds from
+    1989-12-31), not Unix — reading one directly puts the ride 20
+    years early. They also appear to be *local* wall-clock: on a
+    UTC+12 device the list timestamp sat exactly 12 h from the
+    FIT's own UTC `file_id.time_created`. Convert with
+    `FitFile.garminToUnixSeconds` and format in UTC to reproduce
+    the head unit's own reading. The raw value is the activity's
+    identifier for `FILE_GET` / `FILE_DEL`, so never convert it
+    before sending it back to the device.
+
 ## Test strategy
 
 Three layers, each with a different cost/coverage trade.

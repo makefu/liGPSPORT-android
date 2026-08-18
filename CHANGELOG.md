@@ -6,6 +6,37 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Fixed
+
+- **Corrupted activity downloads.** `BleTransport` accumulated
+  notifications from all four channels into one shared buffer, on the
+  assumption that only one logical frame is ever in flight. That holds
+  for a two-second upload but not for an activity download, which
+  streams for tens of seconds: a frame arriving on another channel got
+  spliced into the middle of the file. Because reassembly counts bytes
+  rather than tracking frames, the result was a FIT of exactly the
+  right length with protocol header bytes where ride data should be —
+  accepted silently, then rejected by Strava as malformed. Receive
+  buffers are now per-channel, and a notification from an unrecognised
+  characteristic is dropped with a warning instead of being attributed
+  to whichever channel was seen last.
+  - Diagnosed on a BSC300T: two downloads of one activity diverged at
+    byte 210,572 of 296,853, where the first contained a valid 20-byte
+    `TYPE_REQUEST` frame (service=3) and the second held ride data —
+    the two files matching exactly at a 20-byte shift.
+  - Frame removal now uses one `subList().clear()` instead of
+    `removeAt(0)` in a loop, which was O(n²) on a 300 KB transfer.
+- **Downloads no longer fail silently.** `UploadPipeline.downloadActivity`
+  verifies the FIT's structure and both CRCs (new `route/FitFile.kt`)
+  and reports `corrupt download: …` rather than saving a bad file that
+  only fails much later, somewhere else.
+- **Activity dates were twenty years out.** Device timestamps count
+  from the FIT epoch (1989-12-31), not the Unix one, so the activities
+  list and the saved filenames showed 2006 for a 2026 ride. Note the
+  device's list timestamps read as local wall-clock rather than UTC —
+  observed 12 h from the FIT's own `time_created` on a UTC+12 device —
+  so filenames no longer carry a misleading `Z` suffix.
+
 ## [1.3.0] — 2026-08-14
 
 Multi-device pairing and the Google-Maps-style multi-stop editor, plus

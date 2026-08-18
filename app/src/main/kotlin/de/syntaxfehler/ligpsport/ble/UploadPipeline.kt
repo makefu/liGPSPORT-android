@@ -19,6 +19,7 @@ import de.syntaxfehler.ligpsport.data.AgpsTokenStore
 import de.syntaxfehler.ligpsport.data.MockLocationStore
 import de.syntaxfehler.ligpsport.data.RouterPreferences
 import de.syntaxfehler.ligpsport.route.CnxEncoder
+import de.syntaxfehler.ligpsport.route.FitFile
 import de.syntaxfehler.ligpsport.route.GpxParser
 import de.syntaxfehler.ligpsport.route.Point
 import de.syntaxfehler.ligpsport.route.RouteData
@@ -571,6 +572,18 @@ object UploadPipeline {
     suspend fun downloadActivity(context: Context, timestamp: Long, targetMac: String? = null): Result =
         withDevice(context, targetMac) { transport, paired ->
             val download = FileTransfer.downloadActivity(transport, timestamp)
+            // The stream carries no sequence numbers, so a lost or
+            // interleaved notification yields a right-length file with
+            // wrong contents. The FIT's own CRC is the only thing that
+            // catches it — without this the corruption stays silent
+            // until something downstream (Strava) rejects the file.
+            when (val verdict = FitFile.verify(download.content)) {
+                is FitFile.Verdict.Valid -> Unit
+                is FitFile.Verdict.Invalid -> {
+                    Log.w(TAG, "activity ts=$timestamp failed FIT check: ${verdict.reason}")
+                    return@withDevice Result.Failure("corrupt download: ${verdict.reason}")
+                }
+            }
             val saved = saveActivityFit(context, timestamp, download.content)
             Result.Success(
                 deviceName = paired.name,
@@ -601,10 +614,15 @@ object UploadPipeline {
     private fun saveActivityFit(context: Context, timestamp: Long, content: ByteArray): java.io.File {
         // Scoped external storage — no runtime permissions needed.
         val dir = java.io.File(context.getExternalFilesDir(null), "activities").apply { mkdirs() }
-        val nameFmt = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply {
+        val nameFmt = SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
-        val fileName = "${nameFmt.format(Date(timestamp * 1000L))}.fit"
+        // Device timestamps count from the FIT epoch, not the Unix one.
+        // No trailing 'Z': the device's list timestamps read as local
+        // wall-clock, so stamping them UTC would be a lie. See
+        // FitFile.garminToUnixSeconds.
+        val unix = FitFile.garminToUnixSeconds(timestamp)
+        val fileName = "${nameFmt.format(Date(unix * 1000L))}.fit"
         val out = java.io.File(dir, fileName)
         out.writeBytes(content)
         return out

@@ -56,12 +56,23 @@ class BleTransport(
     private val rxChars = mutableMapOf<Channel, BluetoothGattCharacteristic>()
     private val txChars = mutableMapOf<Channel, BluetoothGattCharacteristic>()
 
-    // A shared receive buffer — the Python reference does the same. The
-    // device only emits one logical frame at a time across all channels
-    // for the upload flow, so this is safe.
-    private val rxBuffer = mutableListOf<Byte>()
-    private var rxExpected: Int? = null
-    private var rxChannel: Channel = Channel.CONTROL
+    // Receive state is per-channel, deliberately.
+    //
+    // This used to be one shared buffer (as the Python reference does),
+    // on the assumption that the device emits one logical frame at a
+    // time across all channels. That holds for a short upload, but an
+    // activity download streams for tens of seconds, and any frame
+    // arriving on another channel meanwhile gets spliced into the
+    // middle of the file. Because reassembly counts bytes rather than
+    // tracking frames, the result is a file of exactly the expected
+    // length with protocol header bytes where ride data should be —
+    // silent corruption.
+    //
+    // Observed on a BSC300T: a 20-byte TYPE_REQUEST frame (service=3)
+    // landed 210,572 bytes into a 296,853-byte FIT download, displacing
+    // 20 bytes of ride data and failing the FIT CRC.
+    private val rxBuffers = mutableMapOf<Channel, MutableList<Byte>>()
+    private val rxExpected = mutableMapOf<Channel, Int>()
     private val received = KChannel<ReceivedFrame>(KChannel.UNLIMITED)
 
     // One callback is in flight at a time, courtesy of [mutex].
@@ -311,22 +322,30 @@ class BleTransport(
     }
 
     private fun handleNotification(c: BluetoothGattCharacteristic, data: ByteArray) {
-        val channel = txChars.entries.firstOrNull { it.value.uuid == c.uuid }?.key ?: rxChannel
-        rxChannel = channel
-        rxBuffer.addAll(data.toList())
+        // No fallback to "the last channel we saw": mis-attributing a
+        // notification is exactly what corrupts a download, so an
+        // unrecognised characteristic is dropped loudly instead.
+        val channel = txChars.entries.firstOrNull { it.value.uuid == c.uuid }
+            ?.key
+            ?: run {
+                Log.w(TAG, "notification from unmapped characteristic ${c.uuid}; dropping")
+                return
+            }
+        val buffer = rxBuffers.getOrPut(channel) { mutableListOf() }
+        buffer.addAll(data.toList())
         while (true) {
-            if (rxExpected == null) {
-                if (rxBuffer.size < HEADER_SIZE) return
-                val header = rxBuffer.subList(0, HEADER_SIZE).toByteArray()
+            if (rxExpected[channel] == null) {
+                if (buffer.size < HEADER_SIZE) return
+                val header = buffer.subList(0, HEADER_SIZE).toByteArray()
                 val sized = try {
                     expectedTotalSize(header)
                 } catch (e: FrameError) {
-                    Log.w(TAG, "dropping malformed header: ${e.message}")
-                    rxBuffer.clear()
+                    Log.w(TAG, "dropping malformed header on $channel: ${e.message}")
+                    buffer.clear()
                     return
                 }
                 if (sized != null) {
-                    rxExpected = sized
+                    rxExpected[channel] = sized
                 } else {
                     // file_tag=0x55 transmit-complete download (CYCLING_DATA
                     // FILE_GET reply). The header's payload_size is bogus —
@@ -334,15 +353,17 @@ class BleTransport(
                     // the real stream length. This may need more bytes than
                     // we currently have buffered, in which case we wait
                     // for the next notification.
-                    val total = transmitCompleteTotalSize(rxBuffer.toByteArray()) ?: return
-                    rxExpected = total
+                    val total = transmitCompleteTotalSize(buffer.toByteArray()) ?: return
+                    rxExpected[channel] = total
                 }
             }
-            val needed = rxExpected!!
-            if (rxBuffer.size < needed) return
-            val frameBytes = rxBuffer.subList(0, needed).toByteArray()
-            repeat(needed) { rxBuffer.removeAt(0) }
-            rxExpected = null
+            val needed = rxExpected.getValue(channel)
+            if (buffer.size < needed) return
+            val frameBytes = buffer.subList(0, needed).toByteArray()
+            // subList().clear() is one O(n) shift; removeAt(0) in a loop
+            // is O(n²) and pathological on a 300 KB download.
+            buffer.subList(0, needed).clear()
+            rxExpected.remove(channel)
             received.trySend(ReceivedFrame(channel, frameBytes))
         }
     }
