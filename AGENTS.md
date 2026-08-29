@@ -36,11 +36,13 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   ├── route/                  GPX parser, CNX encoder, pluggable RouteProvider (brouter / osrm / straightline)
 │   │   ├── search/PhotonClient.kt  type-ahead geocoder
 │   │   ├── ui/
+│   │   │   ├── nav/AppDrawer.kt              AppDestination enum + navigation-drawer sheet
 │   │   │   ├── map/MapScreen.kt              Compose map + auto-plan-on-tap
 │   │   │   ├── map/NavStatusOverlay.kt       bottom-left nav-status pill (LIST_GET poll)
 │   │   │   ├── settings/SettingsScreen.kt    paired device + router + Device-files sub-section rows
-│   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (sub-screen)
-│   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (sub-screen)
+│   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (drawer + sub-screen)
+│   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (drawer + sub-screen)
+│   │   │   ├── settings/DeviceSwitcherTitle.kt top-bar device dropdown shared by both
 │   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
 │   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
 │   │   │   └── share/                        Android share intent → CNX path
@@ -273,8 +275,11 @@ The instrumented tests + adb harness identify UI surfaces by
 |---|---|
 | `osm_map` | The `AndroidView` hosting the osmdroid `MapView` |
 | `search_bar` | DockedSearchBar at the top of Map |
-| `settings_fab` | Gear-icon FAB, bottom-end |
-| `my_location_fab` | My-location FAB stacked above settings; shown only once a GPS fix is available |
+| `menu_fab` | Hamburger FAB, bottom-end — the map's way into the navigation drawer (it has no app bar) |
+| `my_location_fab` | My-location FAB stacked above the menu FAB; shown only once a GPS fix is available |
+| `drawer_sheet` / `drawer_<route>` | Navigation drawer and its items; routes are `map` / `activities` / `routes` / `settings` (see `ui/nav/AppDestination`) |
+| `open_menu` | Hamburger in a top-level screen's app bar. Absent when the screen was pushed from a Settings device row — that shows a back arrow instead |
+| `device_switcher` / `device_option_<mac>` | Top-bar device dropdown on the routes / activities screens. The dropdown only opens when more than one device is paired |
 | `destination_card` | Bottom card on Map when a destination is set |
 | `plan_button` | Plan / Re-plan button inside the destination card |
 | `upload_button` | Upload button inside the destination card |

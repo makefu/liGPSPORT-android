@@ -23,8 +23,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MyLocation
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,7 +88,7 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 @Composable
 fun MapScreen(
     onOpenPairing: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenMenu: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -693,7 +693,7 @@ fun MapScreen(
                 mapView.controller.animateTo(GeoPoint(pt.latitude, pt.longitude))
                 mapView.controller.setZoom(16.0)
             },
-            onOpenSettings = onOpenSettings,
+            onOpenMenu = onOpenMenu,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 16.dp, bottom = 24.dp),
@@ -899,15 +899,20 @@ fun MapScreen(
 }
 
 /**
- * Bottom-right FAB stack: settings (always) + my-location (only when a
- * fix is available). Internal-visible so a Compose UI test can exercise
- * the visibility gating without pulling in the rest of MapScreen.
+ * Bottom-right FAB stack: the navigation menu (always) + my-location
+ * (only when a fix is available). Internal-visible so a Compose UI test
+ * can exercise the visibility gating without pulling in the rest of
+ * MapScreen.
+ *
+ * The menu FAB replaced a dedicated settings one: the map is full-bleed
+ * with no app bar to hang a hamburger off, and Settings is now a drawer
+ * item like the rest.
  */
 @Composable
 internal fun BottomEndFabs(
     currentLocation: Point?,
     onMyLocation: (Point) -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -925,10 +930,10 @@ internal fun BottomEndFabs(
             }
         }
         FloatingActionButton(
-            onClick = onOpenSettings,
-            modifier = Modifier.testTag("settings_fab"),
+            onClick = onOpenMenu,
+            modifier = Modifier.testTag("menu_fab"),
         ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings")
+            Icon(Icons.Default.Menu, contentDescription = "Menu")
         }
     }
 }

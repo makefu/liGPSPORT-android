@@ -26,16 +26,20 @@ authoritative wire spec lives in that repo's `docs/PROTOCOL.md`.
   BSC200 is currently navigating, plus the active route's name.
   Shows `Pair device first` until you've paired, `Connecting…`
   during the first poll.
-- **Route management** in Settings: lists every route the BSC200
-  holds (id, name, distance, active flag) with per-row delete and a
-  "Delete all routes" bulk action. The active navigation route is
+- **Navigation drawer** (hamburger FAB on the map, or swipe from the
+  left elsewhere): Map, Activities on device, Routes on device and
+  Settings. The two device screens have a device dropdown in their top
+  bar when more than one computer is paired.
+- **Route management** under Routes on device: lists every route the
+  BSC200 holds (id, name, distance, active flag) with per-row delete
+  and a "Delete all routes" bulk action. The active navigation route is
   firmware-protected and gets a guard dialog (PROTOCOL.md §7.4).
 - **OsmAnd share**: share a GPX track from OsmAnd via the Android
   share sheet to upload it straight to the device.
-- **Recorded activities off the device**: Settings → Activities on
-  device lists what the BSC200 has recorded, and each row can
-  download the FIT or push it straight into the Android share sheet
-  (Drive, email, Nearby Share).
+- **Recorded activities off the device**: Activities on device lists
+  what the BSC200 has recorded, and each row can download the FIT or
+  push it straight into the Android share sheet (Drive, email, Nearby
+  Share).
 - **Send to Strava** (opt-in): switch it on in Settings → Strava and
   paste your own API credentials, and each activity row gets a one-tap
   upload — fetches the FIT over BLE if needed, uploads, waits for
@@ -105,6 +109,7 @@ nix run .#e2e-test
 | Pluggable route providers (`brouter` / `osrm` / `straightline`) | `.../route/RouteProvider.kt`, `.../route/providers/` |
 | Photon type-ahead geocoder | `.../search/PhotonClient.kt` |
 | Compose UI: map, settings, pairing, share | `.../ui/{map,settings,pairing,share,upload}/` |
+| Navigation drawer + top-level destinations | `.../ui/nav/AppDrawer.kt`, `MainActivity.kt` |
 | Adb harness (broadcast receiver + foreground service) | `.../cli/AdbCliReceiver.kt`, `.../service/UploadForegroundService.kt` |
 
 The `.proto` schemas in `app/src/main/proto/` are vendored from the
@@ -147,7 +152,7 @@ loop end-to-end.
   only has `ON`/`OFF` and `route_plan.proto` has no `FILE_UNUSE`
   opcode. The active navigation route is firmware-protected against
   `FILES_DEL`: the device acks `status=0` but the route stays. The
-  app surfaces this as a guard dialog in Settings → Routes on device.
+  app surfaces this as a guard dialog in Routes on device.
   To stop navigation, use the BSC200's own UI / Stop button.
 - **`DEV_STATUS.navi_status` is dead on the wire.** The proto exposes
   it but BSC200 firmware (verified 2024-05-14) never populates it.

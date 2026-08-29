@@ -225,7 +225,7 @@ class MapScreenEffectsTest {
     @Test
     fun route_edit_resets_success_state_on_intermediates_change() {
         val intermediates = mutableStateOf<List<Waypoint>>(emptyList())
-        val uploadState = mutableStateOf<UploadButtonState>(UploadButtonState.Success)
+        val uploadState = mutableStateOf<UploadButtonState>(UploadButtonState.Success(successes = 1, total = 1))
         var resets = 0
 
         composeTestRule.setContent {
@@ -249,7 +249,7 @@ class MapScreenEffectsTest {
 
         // Put the button back into Success (after a re-upload), then
         // edit the route — the reset must fire again.
-        composeTestRule.runOnIdle { uploadState.value = UploadButtonState.Success }
+        composeTestRule.runOnIdle { uploadState.value = UploadButtonState.Success(successes = 1, total = 1) }
         composeTestRule.runOnIdle {
             intermediates.value = listOf(Waypoint(1L, 48.80, 9.20))
         }
@@ -322,7 +322,7 @@ class MapScreenEffectsTest {
     @Test
     fun route_edit_resets_on_destination_change() {
         val destination = mutableStateOf<Destination?>(Destination("A", 48.83, 9.22))
-        val uploadState = mutableStateOf<UploadButtonState>(UploadButtonState.Success)
+        val uploadState = mutableStateOf<UploadButtonState>(UploadButtonState.Success(successes = 1, total = 1))
 
         composeTestRule.setContent {
             RouteEditUploadReset(
@@ -337,7 +337,7 @@ class MapScreenEffectsTest {
         composeTestRule.waitForIdle()
         assertThat(uploadState.value).isEqualTo(UploadButtonState.Idle)
 
-        composeTestRule.runOnIdle { uploadState.value = UploadButtonState.Success }
+        composeTestRule.runOnIdle { uploadState.value = UploadButtonState.Success(successes = 1, total = 1) }
         composeTestRule.runOnIdle {
             destination.value = Destination("B", 48.84, 9.23)
         }

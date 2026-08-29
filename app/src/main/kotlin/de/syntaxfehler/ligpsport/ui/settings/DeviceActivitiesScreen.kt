@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -76,16 +77,19 @@ import java.util.TimeZone
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
+fun DeviceActivitiesScreen(
+    onBack: () -> Unit,
+    targetMac: String? = null,
+    onOpenMenu: (() -> Unit)? = null,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    val resolvedMac = remember(targetMac) {
-        targetMac ?: DeviceStore(ctx).address()
-    }
-    val deviceLabel = remember(resolvedMac) {
-        val list = DeviceStore(ctx).list()
-        list.firstOrNull { it.mac.equals(resolvedMac, ignoreCase = true) }
-            ?.let { it.name ?: it.mac }
+    val devices = remember { DeviceStore(ctx).list() }
+    // Reached from the drawer with no device in hand, so the selection
+    // has to be mutable state rather than a derived value: [targetMac]
+    // only seeds it, and the top-bar switcher takes over from there.
+    var resolvedMac by remember(targetMac) {
+        mutableStateOf(targetMac ?: devices.firstOrNull()?.mac)
     }
     val paired = resolvedMac != null
     var loading by remember { mutableStateOf(false) }
@@ -211,26 +215,37 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
         }
     }
 
-    LaunchedEffect(paired) { if (paired) refresh() }
+    LaunchedEffect(resolvedMac) { if (resolvedMac != null) refresh() }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text("Activities on device")
-                        deviceLabel?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    DeviceSwitcherTitle(
+                        title = "Activities on device",
+                        devices = devices,
+                        selectedMac = resolvedMac,
+                        onSelect = { mac ->
+                            if (!mac.equals(resolvedMac, ignoreCase = true)) {
+                                resolvedMac = mac
+                                // Stale rows belong to the previous
+                                // device; blank them rather than let
+                                // them linger through the BLE fetch.
+                                entries = emptyList()
+                                error = null
+                            }
+                        },
+                    )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (onOpenMenu != null) {
+                        IconButton(onClick = onOpenMenu, modifier = Modifier.testTag("open_menu")) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        }
+                    } else {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
                 actions = {

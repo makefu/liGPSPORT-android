@@ -8,6 +8,22 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Added
 
+- **Navigation drawer** reaching Map, Activities on device, Routes on
+  device and Settings directly. Until now the map's only exit was a
+  gear FAB into Settings, and the two device screens were buried two
+  levels down behind a paired-device row — fine with one screen to
+  reach, unworkable as the app grows. The gear FAB became the menu
+  button, since a full-bleed map has no app bar to hang a hamburger
+  off; Settings is an item in the drawer like everything else.
+  - Selecting a drawer entry pops back to the map first, so the back
+    stack stays one deep instead of accumulating a chain of siblings.
+  - Swipe-to-open is disabled on the map, where an edge drag is a pan.
+  - **The device screens carry their own device switcher** — a
+    dropdown in the top bar, inert when only one device is paired.
+    Reached from the drawer there is no device to pick beforehand, so
+    the choice had to move into the screen. The Settings device rows
+    still preselect one and still get a back arrow; the drawer entry
+    defaults to the first paired device and gets the hamburger.
 - **Send recorded activities to Strava** (Settings → Activities on
   device → cloud button). Fetches the FIT over BLE if it isn't already
   cached, refreshes the access token when stale, POSTs to
@@ -45,6 +61,7 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
     secret has to be in the app either way.
   - Sharing a FIT into the Strava app is not an alternative: its only
     `ACTION_SEND` filters are `text/plain` and `image/*`.
+
 ### Changed
 
 - **The activity share button (v1.3.0, @mbeutelspacher) no longer
@@ -60,6 +77,12 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **The instrumented test sources didn't compile.** `MapScreenEffectsTest`
+  still used `UploadButtonState.Success` as an object after the
+  multi-device fan-out turned it into a `data class(successes, total)`
+  — the two changes landed on separate branches and never conflicted,
+  so nothing caught it until the whole `androidTest` source set was
+  built again.
 - **Corrupted activity downloads.** `BleTransport` accumulated
   notifications from all four channels into one shared buffer, on the
   assumption that only one logical frame is ever in flight. That holds

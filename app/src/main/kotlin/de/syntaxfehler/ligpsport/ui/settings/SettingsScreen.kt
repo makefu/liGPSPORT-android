@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -83,6 +84,7 @@ fun SettingsScreen(
     onOpenRoutes: (mac: String) -> Unit = {},
     onOpenActivities: (mac: String) -> Unit = {},
     onOpenPreviousRides: () -> Unit = {},
+    onOpenMenu: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val screenScope = rememberCoroutineScope()
@@ -113,8 +115,14 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (onOpenMenu != null) {
+                        IconButton(onClick = onOpenMenu, modifier = Modifier.testTag("open_menu")) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        }
+                    } else {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
             )
