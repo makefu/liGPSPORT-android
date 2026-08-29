@@ -743,6 +743,29 @@ object UploadPipeline {
         return manager?.adapter
     }
 
+    /**
+     * Flash capacity of one device, or null if it can't be had.
+     *
+     * Deliberately outside [Result]: storage is decoration on the
+     * routes and activities screens, and a device that doesn't answer
+     * [DeviceMemory] should leave those screens looking exactly as
+     * they did before rather than surfacing an error row.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun deviceMemory(context: Context, targetMac: String? = null): DeviceMemory.Info? {
+        val paired = resolvePaired(context, targetMac) ?: return null
+        return try {
+            BleSessionManager.withSession(context, paired.mac) { transport ->
+                DeviceMemory.read(transport)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "memory read failed for ${paired.mac}", e)
+            null
+        }
+    }
+
     // ---- Fan-out helpers --------------------------------------------
     //
     // Multi-device entry points. They iterate over every paired device

@@ -207,6 +207,8 @@ fun DeviceRoutesScreen(
                     }
                 }
             }
+            // See the twin in DeviceActivitiesScreen.
+            item { DeviceStorageRow(mac = resolvedMac, refreshKey = routes) }
         }
     }
 

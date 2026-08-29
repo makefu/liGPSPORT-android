@@ -24,6 +24,21 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
     the choice had to move into the screen. The Settings device rows
     still preselect one and still get a back arrow; the drawer entry
     defaults to the first paired device and gets the hamburger.
+- **Device storage** at the foot of the Routes and Activities lists —
+  "412 MB free of 1.9 GB" plus a usage bar. "Delete all" was otherwise
+  a decision made blind, and the question is asked while looking at
+  the rows, so it lives there rather than on a screen of its own. It
+  re-reads after a delete, so the freed space is visible.
+  - Reads `FACTORY MEMORY_GET` (op 5), returning
+    `memory_message{total, remain}` — the same service
+    `LocationInjector` already uses for the position prior.
+  - **Unverified against hardware.** Every failure collapses to
+    showing nothing: a firmware that ignores the operation times out
+    and the card simply doesn't appear. The unit is also an
+    assumption — `memory_message` doesn't state one, bytes is the
+    guess, and the raw pair is logged at INFO to check against the
+    device's own storage screen. If it's off by 1024, the fix is
+    `DeviceMemory.BYTES_PER_UNIT`.
 - **Upload a GPX from the app** (menu → Upload GPX). Pick a `.gpx`
   through the system file picker, see its point count and distance,
   and send it to every paired device — the same fan-out a route upload

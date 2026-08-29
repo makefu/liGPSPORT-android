@@ -31,6 +31,7 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── FileTransfer.kt     uploadGeneralFile / startNavigation / listRoutes / navStatus / deleteRoutesById / listActivities / downloadActivity / deleteActivity / deleteAllActivities
 │   │   │   ├── AgpsClient.kt       AssistNow Online fetch (UBX-MGA payload)
 │   │   │   ├── LocationInjector.kt FACTORY GPS_COORDINATE_SET (position prior)
+│   │   │   ├── DeviceMemory.kt     FACTORY MEMORY_GET (flash total / remain) — UNVERIFIED on hardware
 │   │   │   └── UploadPipeline.kt   high-level orchestration (GPX→CNX→AGPS→seed→upload→FILE_USE)
 │   │   ├── data/AgpsSeedStore.kt   per-device "last AGPS seed" record + 2 h freshness gate
 │   │   ├── route/                  GPX parser, CNX encoder, pluggable RouteProvider (brouter / osrm / straightline)
@@ -43,6 +44,7 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (drawer + sub-screen)
 │   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (drawer + sub-screen)
 │   │   │   ├── settings/DeviceSwitcherTitle.kt top-bar device dropdown shared by both
+│   │   │   ├── settings/DeviceStorageRow.kt  flash-usage footer shared by both
 │   │   │   ├── gpx/GpxImportScreen.kt        pick a .gpx (SAF) → preview → fan-out upload
 │   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
 │   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
@@ -280,6 +282,7 @@ The instrumented tests + adb harness identify UI surfaces by
 | `my_location_fab` | My-location FAB stacked above the menu FAB; shown only once a GPS fix is available |
 | `drawer_sheet` / `drawer_<route>` | Navigation drawer and its items; routes are `map` / `activities` / `routes` / `upload_gpx` / `settings` (see `ui/nav/AppDestination`) |
 | `open_menu` | Hamburger in a top-level screen's app bar. Absent when the screen was pushed from a Settings device row — that shows a back arrow instead |
+| `device_storage` | Flash-usage card at the foot of the routes / activities lists. **Absent whenever the device doesn't answer FACTORY MEMORY_GET** — do not assert on it unconditionally |
 | `gpx_import` / `gpx_pick` / `gpx_upload` / `gpx_summary` / `gpx_status` | Upload GPX screen: surface, file picker, upload button, parsed-file card, result line |
 | `device_switcher` / `device_option_<mac>` | Top-bar device dropdown on the routes / activities screens. The dropdown only opens when more than one device is paired |
 | `destination_card` | Bottom card on Map when a destination is set |

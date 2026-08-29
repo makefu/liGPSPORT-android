@@ -363,6 +363,11 @@ fun DeviceActivitiesScreen(
                     }
                 }
             }
+            // Below the list, and below "Delete all": the question it
+            // answers ("do I need to?") is asked while looking at these
+            // rows. Keyed on `entries` so a delete re-reads and the
+            // freed space shows up.
+            item { DeviceStorageRow(mac = resolvedMac, refreshKey = entries) }
         }
     }
 
