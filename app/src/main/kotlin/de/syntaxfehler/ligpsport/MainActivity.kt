@@ -19,6 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import de.syntaxfehler.ligpsport.ui.gpx.GpxImportScreen
 import de.syntaxfehler.ligpsport.ui.map.MapScreen
 import de.syntaxfehler.ligpsport.ui.nav.AppDestination
 import de.syntaxfehler.ligpsport.ui.nav.AppDrawerContent
@@ -150,6 +151,12 @@ private fun AppNav() {
                     onBack = { nav.popBackStack() },
                     targetMac = entry.arguments?.getString("mac"),
                     onOpenMenu = if (entry.arguments?.getString("mac") == null) ::openMenu else null,
+                )
+            }
+            composable(AppDestination.UploadGpx.route) {
+                GpxImportScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenMenu = ::openMenu,
                 )
             }
             composable("previous_rides") {

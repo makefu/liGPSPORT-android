@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
@@ -39,6 +40,7 @@ enum class AppDestination(
     Map("map", "Map", Icons.Filled.Map),
     Activities("activities", "Activities on device", Icons.AutoMirrored.Filled.DirectionsBike),
     Routes("routes", "Routes on device", Icons.Filled.Route),
+    UploadGpx("upload_gpx", "Upload GPX", Icons.Filled.FileUpload),
     Settings("settings", "Settings", Icons.Filled.Settings),
     ;
 

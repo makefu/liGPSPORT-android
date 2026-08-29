@@ -27,15 +27,18 @@ authoritative wire spec lives in that repo's `docs/PROTOCOL.md`.
   Shows `Pair device first` until you've paired, `Connecting…`
   during the first poll.
 - **Navigation drawer** (hamburger FAB on the map, or swipe from the
-  left elsewhere): Map, Activities on device, Routes on device and
-  Settings. The two device screens have a device dropdown in their top
-  bar when more than one computer is paired.
+  left elsewhere): Map, Activities on device, Routes on device,
+  Upload GPX and Settings. The two device screens have a device
+  dropdown in their top bar when more than one computer is paired.
 - **Route management** under Routes on device: lists every route the
   BSC200 holds (id, name, distance, active flag) with per-row delete
   and a "Delete all routes" bulk action. The active navigation route is
   firmware-protected and gets a guard dialog (PROTOCOL.md §7.4).
-- **OsmAnd share**: share a GPX track from OsmAnd via the Android
-  share sheet to upload it straight to the device.
+- **Upload a GPX**: pick a `.gpx` off the phone from the menu, see its
+  point count and distance, and send it to every paired device.
+- **OsmAnd share**: the same thing from the other direction — share a
+  GPX track from OsmAnd via the Android share sheet to upload it
+  straight to the device, without opening this app first.
 - **Recorded activities off the device**: Activities on device lists
   what the BSC200 has recorded, and each row can download the FIT or
   push it straight into the Android share sheet (Drive, email, Nearby

@@ -43,6 +43,7 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (drawer + sub-screen)
 │   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (drawer + sub-screen)
 │   │   │   ├── settings/DeviceSwitcherTitle.kt top-bar device dropdown shared by both
+│   │   │   ├── gpx/GpxImportScreen.kt        pick a .gpx (SAF) → preview → fan-out upload
 │   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
 │   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
 │   │   │   └── share/                        Android share intent → CNX path
@@ -277,8 +278,9 @@ The instrumented tests + adb harness identify UI surfaces by
 | `search_bar` | DockedSearchBar at the top of Map |
 | `menu_fab` | Hamburger FAB, bottom-end — the map's way into the navigation drawer (it has no app bar) |
 | `my_location_fab` | My-location FAB stacked above the menu FAB; shown only once a GPS fix is available |
-| `drawer_sheet` / `drawer_<route>` | Navigation drawer and its items; routes are `map` / `activities` / `routes` / `settings` (see `ui/nav/AppDestination`) |
+| `drawer_sheet` / `drawer_<route>` | Navigation drawer and its items; routes are `map` / `activities` / `routes` / `upload_gpx` / `settings` (see `ui/nav/AppDestination`) |
 | `open_menu` | Hamburger in a top-level screen's app bar. Absent when the screen was pushed from a Settings device row — that shows a back arrow instead |
+| `gpx_import` / `gpx_pick` / `gpx_upload` / `gpx_summary` / `gpx_status` | Upload GPX screen: surface, file picker, upload button, parsed-file card, result line |
 | `device_switcher` / `device_option_<mac>` | Top-bar device dropdown on the routes / activities screens. The dropdown only opens when more than one device is paired |
 | `destination_card` | Bottom card on Map when a destination is set |
 | `plan_button` | Plan / Re-plan button inside the destination card |

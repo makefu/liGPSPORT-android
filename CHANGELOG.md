@@ -24,6 +24,21 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
     the choice had to move into the screen. The Settings device rows
     still preselect one and still get a back arrow; the drawer entry
     defaults to the first paired device and gets the hamburger.
+- **Upload a GPX from the app** (menu → Upload GPX). Pick a `.gpx`
+  through the system file picker, see its point count and distance,
+  and send it to every paired device — the same fan-out a route upload
+  from the map does.
+  - The app could already receive a GPX, but only from the outside:
+    `ShareImportActivity` handles an inbound share from OsmAnd or
+    Files, which means it is unreachable unless you start in another
+    app. This is the same job from the other direction.
+  - The route is named after the file rather than the GPX's own
+    `<name>`, which is routinely absent or a generic "Track"; the
+    extension is dropped and the rest sanitised to what CNX accepts.
+  - The picker accepts `application/octet-stream` and `text/xml`
+    alongside `application/gpx+xml`, because `.gpx` is served as all
+    three depending on where it came from and filtering to the correct
+    type alone hides the user's own file.
 - **Send recorded activities to Strava** (Settings → Activities on
   device → cloud button). Fetches the FIT over BLE if it isn't already
   cached, refreshes the access token when stale, POSTs to
