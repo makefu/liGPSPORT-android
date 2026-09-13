@@ -6,6 +6,58 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Send recorded activities to Strava** (Settings → Activities on
+  device → cloud button). Fetches the FIT over BLE if it isn't already
+  cached, refreshes the access token when stale, POSTs to
+  `/api/v3/uploads`, then polls until Strava has turned the upload into
+  an activity. `external_id` is the FIT filename, so re-uploading a
+  ride is rejected as a duplicate rather than creating a twin.
+  See [docs/STRAVA.md](docs/STRAVA.md).
+  - **Opt-in, and configured in the app.** Settings → Strava has a
+    switch plus fields for a client id, client secret and refresh
+    token from your own API application, with a *Test connection*
+    button that mints an access token so a bad paste is caught there
+    rather than at the first upload. The upload button appears only
+    once the switch is on *and* all three values are present — a
+    button that can only fail is worse than no button.
+  - All three values are required because Strava's access tokens
+    expire after six hours and only the `refresh_token` grant — which
+    needs the client id and secret — can mint a new one. A pasted
+    access token alone would stop working the same day. Strava also
+    rotates the refresh token on every use, so the stored value is
+    replaced as the app goes.
+  - A build that carries credentials in `app/strava.properties` (or
+    the `LIGPSPORT_STRAVA_*` env vars, now including
+    `_REFRESH_TOKEN`) pre-fills those fields on first run and switches
+    the feature on, so a personal build needs no setup. They are only
+    defaults: edits and *Forget credentials* win from then on. The
+    client secret is still baked into such an APK — don't distribute
+    one.
+  - Uploads are muted from followers' feeds via `hide_from_home`, so
+    they raise no notifications. This is **not** privacy: Strava's
+    Everyone/Followers/Only You visibility isn't exposed through the
+    API and the old `private` upload flag is defunct. Set the account
+    default on Strava if you need that.
+  - No in-app OAuth flow: it would need a registered callback domain
+    and gains nothing over pasting a refresh token, since the client
+    secret has to be in the app either way.
+  - Sharing a FIT into the Strava app is not an alternative: its only
+    `ACTION_SEND` filters are `text/plain` and `image/*`.
+### Changed
+
+- **The activity share button (v1.3.0, @mbeutelspacher) no longer
+  re-downloads a FIT it already has.** An activity download takes tens
+  of seconds, so sharing a ride you just pulled off the device meant
+  waiting through a second transfer for bytes already on the phone.
+  `UploadPipeline.activityFitFile` exposes the deterministic download
+  path, and the share path uses the cached file when one exists,
+  announcing the BLE pull in a snackbar when it doesn't — otherwise the
+  button reads as hung. Failures to build the content URI and failures
+  to find an app that accepts the intent are now reported separately
+  instead of collapsing into one misleading message.
+
 ### Fixed
 
 - **Corrupted activity downloads.** `BleTransport` accumulated

@@ -286,7 +286,8 @@ The instrumented tests + adb harness identify UI surfaces by
 | `routes_list` / `refresh_routes` / `delete_all_routes` / `confirm_delete_all` | DeviceRoutesScreen surface + actions |
 | `route_<id>` / `delete_route_<id>` | Per-route row + its delete icon button (DeviceRoutesScreen) |
 | `activities_list` / `refresh_activities` / `delete_all_activities` / `confirm_delete_all_activities` | DeviceActivitiesScreen surface + actions |
-| `activity_<timestamp>` / `download_activity_<timestamp>` / `delete_activity_<timestamp>` | Per-activity row + its action icon buttons (DeviceActivitiesScreen) |
+| `activity_<timestamp>` / `download_activity_<timestamp>` / `share_activity_<timestamp>` / `strava_activity_<timestamp>` / `delete_activity_<timestamp>` | Per-activity row + its action icon buttons (DeviceActivitiesScreen). The Strava button only renders when `StravaStore.isEnabled()` — the switch is on *and* all three credentials are set. |
+| `strava_card` / `strava_enable` / `strava_client_id` / `strava_client_secret` / `strava_refresh_token` / `strava_save` / `strava_test` / `strava_forget` | Settings → Strava section. Always present; the fields below the switch only render once it is on. |
 
 ## Routing providers
 

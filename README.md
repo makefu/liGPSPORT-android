@@ -32,6 +32,16 @@ authoritative wire spec lives in that repo's `docs/PROTOCOL.md`.
   firmware-protected and gets a guard dialog (PROTOCOL.md §7.4).
 - **OsmAnd share**: share a GPX track from OsmAnd via the Android
   share sheet to upload it straight to the device.
+- **Recorded activities off the device**: Settings → Activities on
+  device lists what the BSC200 has recorded, and each row can
+  download the FIT or push it straight into the Android share sheet
+  (Drive, email, Nearby Share).
+- **Send to Strava** (opt-in): switch it on in Settings → Strava and
+  paste your own API credentials, and each activity row gets a one-tap
+  upload — fetches the FIT over BLE if needed, uploads, waits for
+  Strava to finish processing, and mutes the result from followers'
+  feeds. Off and invisible until you configure it; requires
+  registering an API application, see [docs/STRAVA.md](docs/STRAVA.md).
 - **AGPS pre-seeding**: every route upload silently piggybacks
   ~2.5 KB of u-blox AssistNow ephemeris (`file_type=AGPS(7)`) before
   the route bytes — gives the BSC200's GNSS chip a hot start without
@@ -158,6 +168,8 @@ loop end-to-end.
   harness contract, wire-protocol quirks, failure modes.
 - [docs/AGPS_TOKEN.md](docs/AGPS_TOKEN.md) — how to obtain and
   configure a u-blox AssistNow developer token.
+- [docs/STRAVA.md](docs/STRAVA.md) — registering a Strava API
+  application, and what the API can and can't do about visibility.
 - [docs/smoke-tests.md](docs/smoke-tests.md) — manual hardware smoke
   checklist for milestone reviews.
 - [CHANGELOG.md](CHANGELOG.md) — release history.

@@ -61,6 +61,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Grants short-lived read URIs on downloaded FIT files so the
+             activities screen can hand one to the share sheet. Scoped to
+             `activities/` via @xml/file_paths; not exported. The
+             `${applicationId}` placeholder keeps debug builds (which get
+             the `.debug` suffix) from colliding with a release install. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <service
             android:name=".service.UploadForegroundService"
             android:exported="false"
@@ -72,16 +87,6 @@
              other app routes here. Receiver itself is lightweight —
              long-running BLE work is dispatched onto
              UploadForegroundService. -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
-        </provider>
-
         <receiver
             android:name=".cli.AdbCliReceiver"
             android:exported="true">

@@ -1,6 +1,8 @@
 package de.syntaxfehler.ligpsport.ui.settings
 
+import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
@@ -48,6 +51,8 @@ import de.syntaxfehler.ligpsport.ble.DeviceStore
 import de.syntaxfehler.ligpsport.ble.FileTransfer
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import de.syntaxfehler.ligpsport.route.FitFile
+import de.syntaxfehler.ligpsport.strava.StravaStore
+import de.syntaxfehler.ligpsport.strava.StravaUploader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -58,13 +63,14 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * "Activities on device" sub-screen — list / download (FIT) / delete
- * recorded activities from the BSC200. Mirrors [DeviceRoutesScreen].
+ * "Activities on device" sub-screen — list / download (FIT) / share /
+ * delete recorded activities from the BSC200. Mirrors [DeviceRoutesScreen].
  *
  * testTags (stable, used by instrumented tests + adb harness):
  *   - `refresh_activities`
  *   - `activity_<timestamp>`
- *   - `download_activity_<timestamp>` / `delete_activity_<timestamp>`
+ *   - `download_activity_<timestamp>` / `share_activity_<timestamp>` /
+ *     `delete_activity_<timestamp>`
  *   - `delete_all_activities`
  *   - `confirm_delete_all_activities`
  */
@@ -91,6 +97,10 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
     var deletingAll by remember { mutableStateOf(false) }
     var downloadingTs by remember { mutableStateOf<Long?>(null) }
     var sharingTs by remember { mutableStateOf<Long?>(null) }
+    var stravaTs by remember { mutableStateOf<Long?>(null) }
+    // Switched on in Settings *and* holding a full set of credentials —
+    // otherwise the button could only fail.
+    val stravaReady = remember { StravaStore(ctx).isEnabled() }
     val snackbar = remember { SnackbarHostState() }
 
     fun refresh() {
@@ -105,6 +115,99 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
                 is UploadPipeline.Result.Failure -> error = res.reason
             }
             loading = false
+        }
+    }
+
+    /**
+     * Share the FIT for [entry]. Reuses the already-downloaded file when
+     * there is one, otherwise pulls it off the device first — so the
+     * share button works as a one-tap "get this ride out of the app"
+     * without forcing a separate download tap.
+     */
+    fun share(entry: FileTransfer.ActivityListEntry) {
+        sharingTs = entry.timestamp
+        scope.launch {
+            val cached = UploadPipeline.activityFitFile(ctx, entry.timestamp)
+            val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
+            // Fire-and-forget: showSnackbar() suspends until the snackbar is
+            // dismissed, so awaiting it would stall the fetch it announces.
+            // Worth saying out loud — the BLE pull takes tens of seconds and
+            // otherwise reads as a hung button.
+            if (!haveIt) scope.launch { snackbar.showSnackbar("Fetching FIT from the device…") }
+
+            val outcome = withContext(Dispatchers.IO) {
+                if (haveIt) {
+                    ShareOutcome.Ready(cached)
+                } else {
+                    when (val res = UploadPipeline.downloadActivity(ctx, entry.timestamp)) {
+                        is UploadPipeline.Result.Success ->
+                            ShareOutcome.Ready(res.activitySavedPath?.let(::File) ?: cached)
+                        is UploadPipeline.Result.Failure -> ShareOutcome.Error(res.reason)
+                    }
+                }
+            }
+            sharingTs = null
+            when (outcome) {
+                is ShareOutcome.Ready -> {
+                    // Two distinct failures, easily collapsed into one
+                    // misleading message: building the content URI (missing
+                    // file / FileProvider root mismatch) vs. nothing on the
+                    // phone accepting the intent.
+                    val intent = runCatching { shareFitIntent(ctx, outcome.file) }.getOrElse { e ->
+                        Log.w(TAG, "share: cannot build content URI for ${outcome.file}", e)
+                        snackbar.showSnackbar("Can't share ${outcome.file.name}: ${e.message}")
+                        return@launch
+                    }
+                    runCatching { ctx.startActivity(intent) }.onFailure { e ->
+                        Log.w(TAG, "share: no activity accepted the FIT share intent", e)
+                        snackbar.showSnackbar("No app on this phone accepts a FIT file")
+                    }
+                }
+                is ShareOutcome.Error ->
+                    snackbar.showSnackbar("Couldn't fetch the FIT: ${outcome.reason}")
+            }
+        }
+    }
+
+    /**
+     * Push [entry] to Strava. Same cache-first fetch as [share], then
+     * an upload that Strava processes asynchronously — hence the wait
+     * for an activity id rather than treating the POST as done.
+     */
+    fun sendToStrava(entry: FileTransfer.ActivityListEntry) {
+        stravaTs = entry.timestamp
+        scope.launch {
+            val cached = UploadPipeline.activityFitFile(ctx, entry.timestamp)
+            val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
+            scope.launch {
+                snackbar.showSnackbar(
+                    if (haveIt) "Uploading to Strava…" else "Fetching FIT from the device…",
+                )
+            }
+            val res = withContext(Dispatchers.IO) {
+                StravaUploader.upload(
+                    ctx,
+                    entry.timestamp,
+                    name = null, // let Strava name it from start time + location
+                )
+            }
+            stravaTs = null
+            when (res) {
+                is StravaUploader.Result.Success ->
+                    snackbar.showSnackbar(
+                        when {
+                            res.activityId == null ->
+                                "Strava accepted the upload — still processing"
+                            res.mutedFromFeed -> "Uploaded to Strava (hidden from feed)"
+                            // Worth calling out: the ride is live in
+                            // followers' feeds, which is what muting was
+                            // meant to prevent.
+                            else -> "Uploaded to Strava, but it is visible in the feed"
+                        },
+                    )
+                is StravaUploader.Result.Failure ->
+                    snackbar.showSnackbar("Strava upload failed: ${res.reason}")
+            }
         }
     }
 
@@ -203,6 +306,10 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
                         entry = e,
                         downloading = downloadingTs == e.timestamp,
                         sharing = sharingTs == e.timestamp,
+                        stravaEnabled = stravaReady,
+                        stravaBusy = stravaTs == e.timestamp,
+                        onShare = { share(e) },
+                        onSendToStrava = { sendToStrava(e) },
                         onDownload = {
                             downloadingTs = e.timestamp
                             scope.launch {
@@ -219,38 +326,6 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
                                         snackbar.showSnackbar(
                                             "Saved to ${res.activitySavedPath ?: "?"}",
                                         )
-                                    is UploadPipeline.Result.Failure ->
-                                        snackbar.showSnackbar("Download failed: ${res.reason}")
-                                }
-                            }
-                        },
-                        onShare = {
-                            sharingTs = e.timestamp
-                            scope.launch {
-                                val res = withContext(Dispatchers.IO) {
-                                    UploadPipeline.downloadActivity(ctx, e.timestamp)
-                                }
-                                sharingTs = null
-                                when (res) {
-                                    is UploadPipeline.Result.Success -> {
-                                        val path = res.activitySavedPath
-                                        if (path != null) {
-                                            val file = File(path)
-                                            val uri = FileProvider.getUriForFile(
-                                                ctx,
-                                                "${ctx.packageName}.fileprovider",
-                                                file,
-                                            )
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "application/octet-stream"
-                                                putExtra(Intent.EXTRA_STREAM, uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            ctx.startActivity(
-                                                Intent.createChooser(shareIntent, "Share FIT file"),
-                                            )
-                                        }
-                                    }
                                     is UploadPipeline.Result.Failure ->
                                         snackbar.showSnackbar("Download failed: ${res.reason}")
                                 }
@@ -359,15 +434,47 @@ fun DeviceActivitiesScreen(onBack: () -> Unit, targetMac: String? = null) {
     }
 }
 
+private const val TAG = "DeviceActivities"
+
+private sealed interface ShareOutcome {
+    data class Ready(val file: File) : ShareOutcome
+    data class Error(val reason: String) : ShareOutcome
+}
+
+/**
+ * ACTION_SEND chooser for a downloaded FIT.
+ *
+ * MIME is `application/octet-stream` rather than the registered
+ * `application/vnd.ant.fit` on purpose: almost nothing declares an
+ * intent-filter for the FIT type, so the correct MIME yields an empty
+ * chooser. octet-stream is what the receiving apps (Drive, Gmail,
+ * Nearby Share) actually match on — the same reason this app's own
+ * ShareImportActivity accepts it for inbound GPX.
+ */
+private fun shareFitIntent(ctx: Context, file: File): Intent {
+    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "application/octet-stream"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_TITLE, file.name)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    return Intent.createChooser(send, "Share activity")
+}
+
 @Composable
 private fun ActivityRow(
     entry: FileTransfer.ActivityListEntry,
     downloading: Boolean,
     sharing: Boolean,
-    onDownload: () -> Unit,
+    stravaEnabled: Boolean,
+    stravaBusy: Boolean,
     onShare: () -> Unit,
+    onSendToStrava: () -> Unit,
+    onDownload: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val busy = downloading || sharing || stravaBusy
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -392,8 +499,35 @@ private fun ActivityRow(
                 )
             }
             IconButton(
+                onClick = onDownload,
+                enabled = !busy,
+                modifier = Modifier.testTag("download_activity_${entry.timestamp}"),
+            ) {
+                if (downloading) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(Icons.Filled.Download, contentDescription = "Download FIT")
+                }
+            }
+            if (stravaEnabled) {
+                IconButton(
+                    onClick = onSendToStrava,
+                    enabled = !busy,
+                    modifier = Modifier.testTag("strava_activity_${entry.timestamp}"),
+                ) {
+                    if (stravaBusy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(Icons.Filled.CloudUpload, contentDescription = "Send to Strava")
+                    }
+                }
+            }
+            IconButton(
                 onClick = onShare,
-                enabled = !sharing && !downloading,
+                enabled = !busy,
                 modifier = Modifier.testTag("share_activity_${entry.timestamp}"),
             ) {
                 if (sharing) {
@@ -403,18 +537,8 @@ private fun ActivityRow(
                 }
             }
             IconButton(
-                onClick = onDownload,
-                enabled = !downloading && !sharing,
-                modifier = Modifier.testTag("download_activity_${entry.timestamp}"),
-            ) {
-                if (downloading) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Filled.Download, contentDescription = "Download FIT")
-                }
-            }
-            IconButton(
                 onClick = onDelete,
+                enabled = !busy,
                 modifier = Modifier.testTag("delete_activity_${entry.timestamp}"),
             ) {
                 Icon(Icons.Filled.Delete, contentDescription = "Delete activity")
