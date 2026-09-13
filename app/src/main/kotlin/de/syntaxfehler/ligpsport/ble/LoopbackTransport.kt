@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
  */
 class LoopbackTransport : Transport {
     private val received = KChannel<ReceivedFrame>(capacity = KChannel.UNLIMITED)
+    private val partial = mutableMapOf<Channel, MutableList<Byte>>()
     val outgoing = KChannel<ReceivedFrame>(capacity = KChannel.UNLIMITED)
 
     override suspend fun open() {}
@@ -24,10 +25,25 @@ class LoopbackTransport : Transport {
 
     override fun drain() {
         while (received.tryReceive().isSuccess) { /* discard */ }
+        partial.clear()
+    }
+
+    override fun pendingRx(): Map<Channel, Pair<Int, Int?>> =
+        partial.mapValues { (_, bytes) -> bytes.size to null }
+
+    /**
+     * Model a reply that started and stopped. [BleTransport] strands
+     * such bytes in its per-channel reassembly buffer, where they
+     * prefix — and corrupt — the next frame on that channel unless
+     * [drain] clears them.
+     */
+    fun deliverPartial(channel: Channel, bytes: ByteArray) {
+        partial.getOrPut(channel) { mutableListOf() }.addAll(bytes.toList())
     }
 
     suspend fun deliver(channel: Channel, bytes: ByteArray) {
-        received.send(ReceivedFrame(channel, bytes))
+        val stranded = partial.remove(channel)?.toByteArray() ?: ByteArray(0)
+        received.send(ReceivedFrame(channel, stranded + bytes))
     }
 
     override suspend fun close() {

@@ -119,7 +119,23 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
     screen could say, it picked the wrong one and said it confidently.
     It is now a `DeviceTimeoutException`, surfaced as "the device
     didn't answer within 45s — try again".
-  - The LIST_GET timeout is 45 s rather than 10 s.
+  - A LIST_GET is now retried (5 s, then 15 s, then 25 s) rather than
+    waited on once. The first request after a connect is routinely
+    never answered at all — observed timing out at a full 45 s, then
+    succeeding within seconds when sent again — so a longer wait just
+    buys more silence. The first probe is short because a request that
+    will be answered is answered quickly.
+  - `drain()` also clears half-reassembled frames. A reply that
+    started and stopped left bytes stranded in the per-channel buffer,
+    where the next reply on that channel was appended to them — so a
+    stalled frame didn't merely vanish, it corrupted its successor.
+  - Reassembly failures were invisible: `handleNotification` returns
+    silently while waiting for more bytes, so "nothing came back" and
+    "the reply stalled half-way" looked identical. The final timeout
+    now logs each channel's pending byte count.
+  - `deleteAllRoutes` listed routes without retrying, so an unanswered
+    list reported "no routes on device" — success, for a wipe that
+    never happened.
   - Nothing drained the receive queue before sending. `frames()` is one
     destructively-consumed, unbounded queue shared by every operation,
     so a reply that arrived after its requester gave up sat there until

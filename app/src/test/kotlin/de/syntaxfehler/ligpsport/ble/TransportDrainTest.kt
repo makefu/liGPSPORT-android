@@ -61,4 +61,23 @@ class TransportDrainTest {
         t.drain()
         assertThat(withTimeoutOrNull(200) { t.frames().first() }).isNull()
     }
+
+    /**
+     * The reassembly buffer is per channel and persists, so a reply
+     * that stopped half-way would otherwise prefix the next reply on
+     * that channel with its leftovers and corrupt it.
+     */
+    @Test
+    fun a_half_delivered_frame_does_not_corrupt_the_next_one() = runTest {
+        val t = LoopbackTransport()
+        val whole = frameFor(service = 6)
+
+        // Half a frame, then a drain, then a whole one.
+        t.deliverPartial(Channel.THIRD, whole.copyOfRange(0, whole.size / 2))
+        t.drain()
+        t.deliver(Channel.THIRD, whole)
+
+        val got = withTimeoutOrNull(1_000) { t.frames().first() }
+        assertThat(got?.bytes).isEqualTo(whole)
+    }
 }

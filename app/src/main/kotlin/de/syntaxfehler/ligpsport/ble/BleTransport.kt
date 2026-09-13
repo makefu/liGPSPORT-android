@@ -267,12 +267,21 @@ class BleTransport(
     override fun drain() {
         var dropped = 0
         while (received.tryReceive().isSuccess) dropped++
-        // Worth saying out loud: a non-zero count means some earlier
-        // operation timed out and its answer turned up afterwards, which
-        // is the shape of a timeout that is too short rather than a
-        // device that never replied.
-        if (dropped > 0) Log.i(TAG, "drained $dropped stale frame(s) before sending")
+        val partial = rxBuffers.values.sumOf { it.size }
+        rxBuffers.clear()
+        rxExpected.clear()
+        // Worth saying out loud. Completed-but-unread frames mean some
+        // earlier operation gave up before its answer arrived. Stranded
+        // partial bytes mean a reply started and stopped — which would
+        // otherwise be invisible, and would have corrupted the next
+        // frame on that channel by prefixing it with this rubbish.
+        if (dropped > 0 || partial > 0) {
+            Log.i(TAG, "drained $dropped stale frame(s), $partial partial byte(s)")
+        }
     }
+
+    override fun pendingRx(): Map<Channel, Pair<Int, Int?>> =
+        rxBuffers.entries.associate { (channel, buf) -> channel to (buf.size to rxExpected[channel]) }
 
     override suspend fun close() {
         mutex.withLock {
