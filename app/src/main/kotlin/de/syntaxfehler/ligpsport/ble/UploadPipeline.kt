@@ -166,6 +166,7 @@ object UploadPipeline {
         fileId: Long = System.currentTimeMillis() / 1000L,
         fileName: String = "route",
         targetMac: String? = null,
+        startNavigation: Boolean = true,
     ): Result {
         val paired = resolvePaired(context, targetMac) ?: return Result.Failure("no paired device")
 
@@ -225,15 +226,20 @@ object UploadPipeline {
                 fileName = fileName,
                 fileExtension = "cnx",
             )
-            if (r.success) {
+            if (r.success && startNavigation) {
                 // Auto-start navigation. Mirrors the official app's
                 // "send and use" flow (RoadBookSearchActivity →
-                // setRoutePlanFile in the smali); the user already
-                // committed to navigating by hitting Upload, so any
-                // intermediate "now pick the route on the device"
-                // step is friction. Failure here doesn't fail the
-                // upload — the file is already on the device and
-                // can be activated manually.
+                // setRoutePlanFile in the smali); a user who planned a
+                // route on the map and hit Upload has already committed
+                // to riding it, so an intermediate "now pick the route
+                // on the device" step is friction. Failure here doesn't
+                // fail the upload — the file is already on the device
+                // and can be activated manually.
+                //
+                // Off for library-style imports (Upload GPX, the share
+                // sheet), where the file is being filed away rather
+                // than ridden now, and hijacking the head unit into
+                // navigation is the wrong default.
                 val nav = try {
                     FileTransfer.startNavigation(
                         transport = transport,
@@ -800,6 +806,7 @@ object UploadPipeline {
         fileId: Long = System.currentTimeMillis() / 1000L,
         fileName: String = "route",
         maxAttempts: Int = 1,
+        startNavigation: Boolean = true,
     ): Map<String, Result> {
         val macs = DeviceStore(context).list().map { it.mac }
         if (macs.isEmpty()) return emptyMap()
@@ -815,6 +822,7 @@ object UploadPipeline {
                             fileId = fileId,
                             fileName = fileName,
                             targetMac = mac,
+                            startNavigation = startNavigation,
                         )
                         if (last is Result.Success) return@async last
                         Log.w(

@@ -95,6 +95,19 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Changed
 
+- **Importing a GPX no longer hijacks the head unit into navigation.**
+  Every upload used to finish with `ROUTE_PLAN FILE_USE`, which is
+  right for the map — planning a route and hitting Upload is a
+  commitment to ride it — and wrong for filing one away. Upload GPX
+  and the share sheet now upload only; the map is unchanged.
+  `UploadPipeline.uploadGpx`/`uploadGpxAll` take `startNavigation`,
+  default true.
+- **Route names keep their spaces.** `sanitiseFileName` folded
+  whitespace to `_` on the assumption the firmware wanted it; routes
+  uploaded by the Python tool keep their spaces and display fine, so
+  the underscores were ours and only made names uglier. The non-ASCII
+  strip and 32-char cap stay — both untested rather than known, and a
+  dropped umlaut is a cheaper mistake than a rejected upload.
 - **The activity share button (v1.3.0, @mbeutelspacher) no longer
   re-downloads a FIT it already has.** An activity download takes tens
   of seconds, so sharing a ride you just pulled off the device meant

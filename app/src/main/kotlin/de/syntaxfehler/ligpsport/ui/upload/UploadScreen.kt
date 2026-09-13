@@ -167,27 +167,40 @@ fun UploadScreen(
 
 /**
  * Reduce a free-form destination name to something the BSC200 firmware
- * is happy with as a file name: ASCII letters/digits/`_-.`, spaces
- * folded to `_`, capped at 32 chars. Returns null for blank/unusable
- * inputs so the caller can fall back to a default.
+ * is happy with as a file name: ASCII letters/digits/space/`_-.`,
+ * runs of whitespace collapsed to one space, capped at 32 chars.
+ * Returns null for blank/unusable inputs so the caller can fall back
+ * to a default.
+ *
+ * Spaces used to be folded to `_` on the assumption the firmware
+ * wanted them gone. It doesn't: routes uploaded by the Python tool
+ * keep their spaces and display correctly on the device, so the
+ * underscores were ours and only made names uglier.
+ *
+ * The remaining rules are untested rather than known — no non-ASCII
+ * name has been tried on hardware, and 32 is a guess at the display
+ * limit. They stay because a dropped umlaut is a cosmetic loss and a
+ * rejected upload isn't; relax them if a real name hits one.
  *
  * Visible for testing.
  */
 internal fun sanitiseFileName(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
-    val collapsed = raw.trim().replace(Regex("\\s+"), "_")
+    val collapsed = raw.trim().replace(Regex("\\s+"), " ")
     val ascii = buildString(collapsed.length) {
         for (ch in collapsed) {
             when {
                 ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' -> append(ch)
-                ch == '_' || ch == '-' || ch == '.' -> append(ch)
+                ch == ' ' || ch == '_' || ch == '-' || ch == '.' -> append(ch)
                 // Drop everything else (umlauts, punctuation, emoji).
             }
         }
     }
-    val trimmed = ascii.trim('_', '-', '.')
+    // Dropping a non-ASCII char can leave a double space behind
+    // ("Köln Süd" -> "Kln  Sd"), so collapse once more after filtering.
+    val trimmed = ascii.replace(Regex(" {2,}"), " ").trim(' ', '_', '-', '.')
     if (trimmed.isEmpty()) return null
-    return trimmed.take(32)
+    return trimmed.take(32).trimEnd(' ')
 }
 
 @Composable

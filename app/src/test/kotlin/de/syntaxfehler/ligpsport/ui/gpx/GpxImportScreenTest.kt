@@ -26,7 +26,7 @@ class GpxImportScreenTest {
 
     @Test
     fun falls_back_to_the_gpx_name_when_there_is_no_file_name() {
-        assertThat(uploadNameFor(null, "Sunday Loop")).isEqualTo("Sunday_Loop")
+        assertThat(uploadNameFor(null, "Sunday Loop")).isEqualTo("Sunday Loop")
     }
 
     /**
@@ -36,7 +36,7 @@ class GpxImportScreenTest {
      */
     @Test
     fun an_unsanitisable_file_name_falls_through_to_the_gpx_name() {
-        assertThat(uploadNameFor("日本語.gpx", "Kyoto ride")).isEqualTo("Kyoto_ride")
+        assertThat(uploadNameFor("日本語.gpx", "Kyoto ride")).isEqualTo("Kyoto ride")
     }
 
     @Test

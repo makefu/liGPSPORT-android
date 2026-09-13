@@ -219,6 +219,10 @@ fun GpxImportScreen(onBack: () -> Unit, onOpenMenu: (() -> Unit)? = null) {
                                                 ctx,
                                                 file.bytes,
                                                 fileName = file.uploadName,
+                                                // Filing a route away, not
+                                                // setting off on it — leave
+                                                // the head unit alone.
+                                                startNavigation = false,
                                             )
                                         }
                                         uploading = false
