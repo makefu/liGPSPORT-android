@@ -121,6 +121,13 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **A GPX import reported "Upload failed: uploaded".** Skipping the
+  navigation-start step for library-style imports accidentally routed
+  a *successful* upload down the failure branch, so it was reported as
+  a failure carrying the success message. The route was on the device
+  the whole time. Upload success and navigation start are now
+  independent, and `navStarted` is null — rather than false — when
+  navigation was never attempted.
 - **"No routes" / "No activities" on the first load.** The first
   LIST_GET of each kind after the app starts takes longer than the old
   10 s timeout — the device appears to index its flash once and serve a

@@ -226,7 +226,9 @@ object UploadPipeline {
                 fileName = fileName,
                 fileExtension = "cnx",
             )
-            if (r.success && startNavigation) {
+            if (!r.success) {
+                Result.Failure(r.message, r.status)
+            } else {
                 // Auto-start navigation. Mirrors the official app's
                 // "send and use" flow (RoadBookSearchActivity →
                 // setRoutePlanFile in the smali); a user who planned a
@@ -236,23 +238,29 @@ object UploadPipeline {
                 // fail the upload — the file is already on the device
                 // and can be activated manually.
                 //
-                // Off for library-style imports (Upload GPX, the share
-                // sheet), where the file is being filed away rather
-                // than ridden now, and hijacking the head unit into
-                // navigation is the wrong default.
-                val nav = try {
-                    FileTransfer.startNavigation(
-                        transport = transport,
-                        fileId = fileId,
-                        fileExtension = "cnx",
-                        name = fileName,
-                        totalDistanceM = route.distanceM.toLong(),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "start-navigation: exception ${e.message}")
-                    FileTransfer.UploadResult(false, "exception: ${e.message}", -1)
+                // Skipped for library-style imports (Upload GPX, the
+                // share sheet), where the file is being filed away
+                // rather than ridden now. Skipping it must not touch
+                // whether the *upload* succeeded — the two are
+                // independent, and conflating them reported a perfectly
+                // good upload as "Upload failed: uploaded".
+                val nav = if (startNavigation) {
+                    try {
+                        FileTransfer.startNavigation(
+                            transport = transport,
+                            fileId = fileId,
+                            fileExtension = "cnx",
+                            name = fileName,
+                            totalDistanceM = route.distanceM.toLong(),
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "start-navigation: exception ${e.message}")
+                        FileTransfer.UploadResult(false, "exception: ${e.message}", -1)
+                    }
+                } else {
+                    null
                 }
-                if (!nav.success) {
+                if (nav != null && !nav.success) {
                     Log.w(TAG, "start-navigation rejected (status=${nav.status}): ${nav.message}")
                 }
                 Result.Success(
@@ -265,10 +273,10 @@ object UploadPipeline {
                     agpsBytes = agpsBytes,
                     seedLat = seedFix?.latitude,
                     seedLon = seedFix?.longitude,
-                    navStarted = nav.success,
+                    // null, not false: navigation wasn't attempted, which
+                    // is not the same as having been refused.
+                    navStarted = nav?.success,
                 )
-            } else {
-                Result.Failure(r.message, r.status)
             }
         }
     }
