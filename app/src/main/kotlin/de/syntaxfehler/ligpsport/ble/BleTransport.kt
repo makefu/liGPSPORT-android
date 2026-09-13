@@ -264,6 +264,16 @@ class BleTransport(
 
     override fun frames(): Flow<ReceivedFrame> = received.receiveAsFlow()
 
+    override fun drain() {
+        var dropped = 0
+        while (received.tryReceive().isSuccess) dropped++
+        // Worth saying out loud: a non-zero count means some earlier
+        // operation timed out and its answer turned up afterwards, which
+        // is the shape of a timeout that is too short rather than a
+        // device that never replied.
+        if (dropped > 0) Log.i(TAG, "drained $dropped stale frame(s) before sending")
+    }
+
     override suspend fun close() {
         mutex.withLock {
             val g = gatt

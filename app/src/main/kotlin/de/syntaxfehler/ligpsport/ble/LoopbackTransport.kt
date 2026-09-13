@@ -22,6 +22,10 @@ class LoopbackTransport : Transport {
 
     override fun frames(): Flow<ReceivedFrame> = received.receiveAsFlow()
 
+    override fun drain() {
+        while (received.tryReceive().isSuccess) { /* discard */ }
+    }
+
     suspend fun deliver(channel: Channel, bytes: ByteArray) {
         received.send(ReceivedFrame(channel, bytes))
     }

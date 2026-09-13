@@ -34,11 +34,11 @@ import java.io.ByteArrayOutputStream
  * 1. Whether the device answers this operation at all — a firmware
  *    that ignores it yields a timeout, which [read] reports as null so
  *    the caller simply shows nothing.
- * 2. **The unit.** `memory_message` doesn't say, and bytes is the
- *    assumption here. If the readout is off by a factor of 1024 the
- *    fix is [BYTES_PER_UNIT], not the parsing. The raw pair is logged
- *    at INFO for exactly this comparison — check it against the
- *    device's own storage screen.
+ * 2. **The unit.** `memory_message` doesn't state one. KiB, from a
+ *    32 GB BSC200 reporting `total=29314560` — see [BYTES_PER_UNIT].
+ *    Confirmed on one device only, so if another model reads wrong by
+ *    a round factor that constant is the fix, not the parsing. The raw
+ *    pair is logged at INFO for exactly that comparison.
  */
 object DeviceMemory {
     private const val TAG = "DeviceMemory"
@@ -57,11 +57,15 @@ object DeviceMemory {
 
     /**
      * What one unit of `memory_message.total` / `.remain` is worth.
-     * Assumed bytes; see the class note. A `uint32` of bytes tops out
-     * at 4 GiB, which comfortably covers a head unit's flash, so the
-     * assumption is at least self-consistent.
+     *
+     * KiB, established against a 32 GB BSC200: it reported
+     * `total=29314560`, which is 27.96 GiB in KiB — what a formatted
+     * 32 GB card has left after the head unit's own partitions. Bytes,
+     * the original guess, would have made it a 29 MB device, and a
+     * `uint32` of bytes caps out at 4 GiB so it could never have
+     * described this hardware at all.
      */
-    internal const val BYTES_PER_UNIT = 1L
+    internal const val BYTES_PER_UNIT = 1024L
 
     /**
      * [total] and [free] in bytes. Both are what the device reported,
@@ -113,9 +117,14 @@ object DeviceMemory {
         if (info == null) {
             Log.i(TAG, "memory-get: no usable reply within ${timeoutMs}ms")
         } else {
-            // Raw pair, for checking the unit assumption against the
-            // device's own storage screen. See the class note.
-            Log.i(TAG, "memory-get: total=${info.total} free=${info.free} (unit assumed bytes)")
+            // Raw pair as well as the scaled figures: the unit is
+            // established on one device only, so keep the number that
+            // can be checked against another device's storage screen.
+            Log.i(
+                TAG,
+                "memory-get: total=${info.total} free=${info.free} bytes " +
+                    "(raw ${info.total / BYTES_PER_UNIT}/${info.free / BYTES_PER_UNIT} KiB)",
+            )
         }
         return info
     }

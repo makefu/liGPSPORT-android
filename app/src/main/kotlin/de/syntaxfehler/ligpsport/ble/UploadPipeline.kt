@@ -734,6 +734,10 @@ object UploadPipeline {
         BleSessionManager.withSession(context, paired.mac) { transport -> block(transport, paired) }
     } catch (e: CancellationException) {
         throw e
+    } catch (e: DeviceTimeoutException) {
+        // Already a sentence written for the user; prefixing it with
+        // "BLE error:" would only make it read like a crash.
+        Result.Failure(e.message ?: "the device didn't answer")
     } catch (e: Exception) {
         Result.Failure("BLE error: ${e.message}")
     }

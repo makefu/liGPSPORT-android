@@ -32,13 +32,14 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
   - Reads `FACTORY MEMORY_GET` (op 5), returning
     `memory_message{total, remain}` — the same service
     `LocationInjector` already uses for the position prior.
-  - **Unverified against hardware.** Every failure collapses to
-    showing nothing: a firmware that ignores the operation times out
-    and the card simply doesn't appear. The unit is also an
-    assumption — `memory_message` doesn't state one, bytes is the
-    guess, and the raw pair is logged at INFO to check against the
-    device's own storage screen. If it's off by 1024, the fix is
+  - Confirmed on a 32 GB BSC200, which reads "20.3 GB free of
+    30.0 GB". `memory_message` states no unit; KiB is established from
+    that device and only that device, so the raw pair stays logged at
+    INFO — if another model reads wrong by a round factor, the fix is
     `DeviceMemory.BYTES_PER_UNIT`.
+  - Every failure collapses to showing nothing: a firmware that
+    ignores the operation times out and the card simply doesn't
+    appear, rather than putting an error on someone else's screen.
 - **Upload a GPX from the app** (menu → Upload GPX). Pick a `.gpx`
   through the system file picker, see its point count and distance,
   and send it to every paired device — the same fan-out a route upload
@@ -107,6 +108,30 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ### Fixed
 
+- **"No routes" / "No activities" on the first load.** The first
+  LIST_GET of each kind after the app starts takes longer than the old
+  10 s timeout — the device appears to index its flash once and serve a
+  cache afterwards, which is why a manual refresh came back instantly
+  with the full list. Three separate things made that look like an
+  empty device:
+  - A timed-out list returned `emptyList()`, rendering identically to
+    a device that genuinely holds nothing — of the two things the
+    screen could say, it picked the wrong one and said it confidently.
+    It is now a `DeviceTimeoutException`, surfaced as "the device
+    didn't answer within 45s — try again".
+  - The LIST_GET timeout is 45 s rather than 10 s.
+  - Nothing drained the receive queue before sending. `frames()` is one
+    destructively-consumed, unbounded queue shared by every operation,
+    so a reply that arrived after its requester gave up sat there until
+    the next operation collected it and took it for its own answer —
+    the reason the refresh was *instant*. `Transport.drain()` is now
+    called immediately before each list request, so what comes back can
+    only answer what was just sent.
+- **Device storage read the wrong unit.** `memory_message` doesn't
+  state one and bytes was the initial guess; a 32 GB BSC200 reporting
+  `total=29314560` settles it as KiB (27.96 GiB — a formatted 32 GB
+  card after the head unit's own partitions). Bytes would have shown
+  that device as 29 MB.
 - **The instrumented test sources didn't compile.** `MapScreenEffectsTest`
   still used `UploadButtonState.Success` as an object after the
   multi-device fan-out turned it into a `data class(successes, total)`

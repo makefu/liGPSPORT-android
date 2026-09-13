@@ -15,8 +15,29 @@ import java.io.ByteArrayOutputStream
  * implementation), so we don't depend on the protobuf-kotlin-lite
  * runtime here.
  */
+/**
+ * The device accepted the request but never answered it.
+ *
+ * Distinct from an empty result on purpose: the two used to be the
+ * same `emptyList()`, so a device that hadn't replied yet was reported
+ * to the user as "no routes" / "no activities" — the most misleading
+ * thing the screen could have said.
+ */
+class DeviceTimeoutException(message: String) : Exception(message)
+
 object FileTransfer {
     private const val TAG = "FileTransfer"
+
+    /**
+     * How long to wait for a LIST_GET answer.
+     *
+     * Generous because the *first* list query of each kind after the
+     * app starts is slow — observed timing out at 10 s on a 30 GB
+     * BSC200 and then answering instantly on the retry, which is the
+     * shape of the device indexing its flash once and serving a cache
+     * afterwards. The old 10 s turned that into an empty list.
+     */
+    private const val LIST_TIMEOUT_MS = 45_000L
 
     // common.proto enum values
     private const val SERVICE_FILE_OPERATION = 21
@@ -282,7 +303,7 @@ object FileTransfer {
      */
     suspend fun listRoutes(
         transport: Transport,
-        timeoutMs: Long = 10_000,
+        timeoutMs: Long = LIST_TIMEOUT_MS,
     ): List<RouteEntry> {
         val body = buildRoutePlanListPb()
         val wire = buildFrame(
@@ -297,11 +318,14 @@ object FileTransfer {
             val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
             parsed?.takeIf { it.service == SERVICE_ROUTE_PLAN }
         }
+        transport.drain()
         transport.send(wire, Channel.CONTROL)
         val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
         if (ack == null) {
-            Log.w(TAG, "list-routes timed out")
-            return emptyList()
+            Log.w(TAG, "list-routes timed out after ${timeoutMs}ms")
+            throw DeviceTimeoutException(
+                "the device didn't answer within ${timeoutMs / 1000}s — try again",
+            )
         }
         if (ack.payload.isEmpty()) {
             // Confirm-only reply (no payload) — empty list or error.
@@ -706,7 +730,7 @@ object FileTransfer {
         transport: Transport,
         fileIndexStart: Int = 0,
         fileIndexEnd: Int = 100,
-        timeoutMs: Long = 10_000,
+        timeoutMs: Long = LIST_TIMEOUT_MS,
     ): List<ActivityListEntry> {
         val body = buildCyclingDataListGetPb(fileIndexStart, fileIndexEnd)
         val head = buildCyclingDataHead(body, op = CYCLING_DATA_OP_LIST_GET, fileTag = FILE_TAG_DEFAULT)
@@ -716,10 +740,13 @@ object FileTransfer {
             val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
             parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
         }
+        transport.drain()
         transport.send(merged, Channel.THIRD)
         val ack: Frame = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() } ?: run {
-            Log.w(TAG, "list-activities timed out")
-            return emptyList()
+            Log.w(TAG, "list-activities timed out after ${timeoutMs}ms")
+            throw DeviceTimeoutException(
+                "the device didn't answer within ${timeoutMs / 1000}s — try again",
+            )
         }
         if (ack.payload.isEmpty()) {
             Log.i(TAG, "list-activities: confirm-only reply, status=${ack.status}")

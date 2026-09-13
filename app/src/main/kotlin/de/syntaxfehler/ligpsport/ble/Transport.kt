@@ -19,6 +19,22 @@ interface Transport {
     /** Frames received from the device, multiplexed across all channels. */
     fun frames(): Flow<ReceivedFrame>
 
+    /**
+     * Discard frames that arrived before now.
+     *
+     * [frames] is one destructively-consumed queue shared by every
+     * operation, and it buffers without bound — a reply that arrives
+     * after its requester gave up waiting simply sits there until the
+     * *next* operation collects it and mistakes it for its own answer.
+     * Call this immediately before sending a request so that what comes
+     * back can only be a response to it.
+     *
+     * Safe because [BleSessionManager] leases a device exclusively:
+     * there is never a second operation mid-exchange whose reply this
+     * could throw away.
+     */
+    fun drain()
+
     /** Close the connection and release resources. */
     suspend fun close()
 }

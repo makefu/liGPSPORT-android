@@ -60,6 +60,9 @@ class BleSessionManagerTest {
 
         override suspend fun send(frame: ByteArray, channel: Channel) = Unit
         override fun frames(): Flow<ReceivedFrame> = emptyFlow()
+
+        /** Nothing is ever queued on this fake, so there is nothing to drop. */
+        override fun drain() = Unit
         override suspend fun close() {
             open = false
             stats.closes.incrementAndGet()
