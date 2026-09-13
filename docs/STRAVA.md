@@ -23,40 +23,11 @@ no credentials and expects you to register your own API application.
 
 ## Setup
 
-1. Go to <https://www.strava.com/settings/api> and create an
-   application. Category, website and icon are cosmetic; the
-   Authorization Callback Domain is not used by this app.
-
-   Note down the **Client ID** and **Client Secret**.
-
-2. Get a refresh token with the `activity:write` scope. Strava's
-   settings page shows a token for `read` only, which cannot upload —
-   so do the authorization exchange once, by hand:
-
-   ```sh
-   # 1. Open this in a browser, approve, then copy the `code`
-   #    parameter out of the URL you land on.
-   echo "https://www.strava.com/oauth/authorize?client_id=$CLIENT_ID&response_type=code&redirect_uri=http://localhost&approval_prompt=force&scope=activity:write"
-
-   # 2. Trade the code for tokens. `refresh_token` in the response is
-   #    the long-lived one you want.
-   curl -X POST https://www.strava.com/oauth/token \
-     -d client_id=$CLIENT_ID \
-     -d client_secret=$CLIENT_SECRET \
-     -d code=$CODE \
-     -d grant_type=authorization_code
-   ```
-
-   The browser will fail to load `http://localhost` — that's fine, the
-   `code` is in the address bar either way.
-
-3. **Settings → Strava**, switch on, paste the client id, client
-   secret and refresh token, then **Test connection**. A successful
-   test means the credentials can mint an access token, which is
-   exactly what an upload needs.
-
-4. **Settings → Activities on device** now shows a cloud-upload button
-   on each row.
+The step-by-step walkthrough — registering the API application,
+minting a write-scoped refresh token, and entering the three values —
+lives in the README under **Enabling Strava upload**. It is the one
+place it should be written down; the rest of this document is the
+reasoning behind it and the parts of the API that surprise people.
 
 ### Optional: bake the credentials into your own build
 

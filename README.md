@@ -47,8 +47,8 @@ authoritative wire spec lives in that repo's `docs/PROTOCOL.md`.
   paste your own API credentials, and each activity row gets a one-tap
   upload — fetches the FIT over BLE if needed, uploads, waits for
   Strava to finish processing, and mutes the result from followers'
-  feeds. Off and invisible until you configure it; requires
-  registering an API application, see [docs/STRAVA.md](docs/STRAVA.md).
+  feeds. Off and invisible until you configure it — see
+  [Enabling Strava upload](#enabling-strava-upload) below.
 - **AGPS pre-seeding**: every route upload silently piggybacks
   ~2.5 KB of u-blox AssistNow ephemeris (`file_type=AGPS(7)`) before
   the route bytes — gives the BSC200's GNSS chip a hot start without
@@ -96,6 +96,81 @@ nix run .#run-instrumented-tests
 # (pairs the device, runs upload + nav-start + delete-all + verify)
 nix run .#e2e-test
 ```
+
+## Enabling Strava upload
+
+Off by default. Uploading needs your own Strava API application: the
+client secret has to live inside the app, so there is no shared set of
+credentials to ship. A one-off, about five minutes.
+
+1. **Register an API application with Strava.** Log in at
+   <https://www.strava.com>, then go to *Settings → My API Application*
+   — or straight to <https://www.strava.com/settings/api>.
+
+   The form insists on a value for every field, even though this app
+   only ever uses two of them:
+
+   | Field | What to put |
+   |---|---|
+   | Application Name | anything, e.g. `liGPSPORT` |
+   | Category | anything, e.g. *Data Importer* |
+   | Club | leave blank |
+   | Website | anything, e.g. the URL of this repo |
+   | Authorization Callback Domain | `localhost` — unused, this app never does an in-app OAuth redirect |
+
+   Agree to the API terms and hit **Create**. Strava may ask for an
+   app icon before it lets you finish; any image will do.
+
+   The page then shows your **Client ID** and **Client Secret** (click
+   *Show* to reveal the secret). Note both down — they are the first
+   two of the three values the app asks for.
+
+2. **Mint a refresh token with the `activity:write` scope.** The same
+   settings page also shows *Your Access Token* — ignore it. That one
+   carries only the `read` scope, so every upload with it fails. There
+   is no button for a write-scoped token; you do the exchange by hand,
+   once:
+
+   ```sh
+   CLIENT_ID=12345          # from step 1
+   CLIENT_SECRET=abc123...  # from step 1
+
+   # Print the authorisation URL, open it, approve.
+   echo "https://www.strava.com/oauth/authorize?client_id=$CLIENT_ID&response_type=code&redirect_uri=http://localhost&approval_prompt=force&scope=activity:write"
+
+   # You land on a "can't reach this page" error — that is expected,
+   # nothing is listening on localhost. What matters is the address
+   # bar: copy the value of the `code` parameter out of it.
+   CODE=<paste the code here>
+
+   # Trade it for tokens. `refresh_token` in the JSON response is the
+   # long-lived one the app wants.
+   curl -X POST https://www.strava.com/oauth/token \
+     -d client_id=$CLIENT_ID -d client_secret=$CLIENT_SECRET \
+     -d code=$CODE -d grant_type=authorization_code
+   ```
+
+3. In the app: **Settings → Strava**, turn the switch on, paste the
+   client id, client secret and refresh token, then tap **Test
+   connection**. That performs the same token refresh every upload
+   starts with, so if it reports success the credentials are good.
+
+4. **Activities on device** now shows a cloud button on each row.
+
+All three values are needed because Strava's access tokens expire after
+six hours, and only the refresh grant — which needs the client id and
+secret — can mint a new one. A pasted access token would stop working
+the same day.
+
+On a personal build you can skip the typing: put the same values in a
+gitignored `app/strava.properties` (copy `app/strava.properties.example`)
+and they pre-fill the settings on first run. Don't hand that build to
+anyone — the secret is extractable from the APK.
+
+Uploads are muted from followers' feeds, which is **not** the same as
+private; Strava's API cannot set activity visibility at all. See
+[docs/STRAVA.md](docs/STRAVA.md) for that, and for how the tokens are
+stored.
 
 ## Architecture
 
@@ -176,8 +251,10 @@ loop end-to-end.
   harness contract, wire-protocol quirks, failure modes.
 - [docs/AGPS_TOKEN.md](docs/AGPS_TOKEN.md) — how to obtain and
   configure a u-blox AssistNow developer token.
-- [docs/STRAVA.md](docs/STRAVA.md) — registering a Strava API
-  application, and what the API can and can't do about visibility.
+- [docs/STRAVA.md](docs/STRAVA.md) — why Strava upload needs your own
+  API credentials, what the API can and can't do about activity
+  visibility, and how the tokens are stored. The setup steps are in
+  [Enabling Strava upload](#enabling-strava-upload) above.
 - [docs/smoke-tests.md](docs/smoke-tests.md) — manual hardware smoke
   checklist for milestone reviews.
 - [CHANGELOG.md](CHANGELOG.md) — release history.
