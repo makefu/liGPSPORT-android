@@ -3,6 +3,7 @@ package de.syntaxfehler.ligpsport.strava
 import android.content.Context
 import android.util.Log
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,8 +18,12 @@ import java.io.File
 object StravaUploader {
     private const val TAG = "StravaUploader"
 
-    /** Refresh a bit early — a token that expires mid-upload is a wasted BLE fetch. */
-    private const val EXPIRY_MARGIN_SECONDS = 120L
+    /**
+     * Refresh well before expiry. The token has to outlast the POST of
+     * the file and the whole [POLL_TIMEOUT_MS] poll, and a 401 halfway
+     * through reads as a failed upload of a ride Strava already has.
+     */
+    private const val EXPIRY_MARGIN_SECONDS = 600L
 
     private const val POLL_INTERVAL_MS = 1_500L
     private const val POLL_TIMEOUT_MS = 90_000L
@@ -207,19 +212,39 @@ object StravaUploader {
         store.credentials()?.refreshToken
             ?: throw StravaClient.StravaException("no Strava credentials — add them in Settings → Strava")
 
-    private suspend fun awaitProcessing(
+    /**
+     * Poll [ticket] until Strava reports an activity or a rejection.
+     *
+     * The upload has already been accepted by the time this runs, so a
+     * failed poll (a 429, a dropped connection) is retried until the
+     * deadline rather than reported as a failed upload — the user's
+     * obvious retry would only trip Strava's duplicate check. The last
+     * poll's answer is always inspected, even if it arrived after the
+     * deadline.
+     */
+    internal suspend fun awaitProcessing(
         client: StravaClient,
         accessToken: String,
         ticket: StravaClient.UploadStatus,
         fileName: String,
+        timeoutMs: Long = POLL_TIMEOUT_MS,
+        intervalMs: Long = POLL_INTERVAL_MS,
     ): Result {
-        val deadline = System.currentTimeMillis() + POLL_TIMEOUT_MS
-        var latest = ticket
-        while (System.currentTimeMillis() < deadline) {
-            latest.error?.let { return Result.Failure(it) }
-            latest.activityId?.let { return Result.Success(it, fileName) }
-            delay(POLL_INTERVAL_MS)
-            latest = client.pollUpload(accessToken, ticket.id)
+        val deadline = System.currentTimeMillis() + timeoutMs
+        var latest: StravaClient.UploadStatus? = ticket
+        while (true) {
+            latest?.error?.let { return Result.Failure(it) }
+            latest?.activityId?.let { return Result.Success(it, fileName) }
+            if (System.currentTimeMillis() >= deadline) break
+            delay(intervalMs)
+            latest = try {
+                client.pollUpload(accessToken, ticket.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "polling upload ${ticket.id} failed; retrying", e)
+                null
+            }
         }
         // Strava says mean processing is under 2 s; if we get here the
         // upload is probably fine but slow, so don't call it a failure.
