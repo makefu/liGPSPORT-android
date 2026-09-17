@@ -99,9 +99,12 @@ fun DeviceActivitiesScreen(
     var pendingDeleting by remember { mutableStateOf(false) }
     var confirmDeleteAll by remember { mutableStateOf(false) }
     var deletingAll by remember { mutableStateOf(false) }
-    var downloadingTs by remember { mutableStateOf<Long?>(null) }
-    var sharingTs by remember { mutableStateOf<Long?>(null) }
-    var stravaTs by remember { mutableStateOf<Long?>(null) }
+    // Keyed by device as well as timestamp: the switcher can change
+    // device while a fetch runs, and a bare timestamp would put the
+    // spinner on the other device's row with the same one.
+    var downloading by remember { mutableStateOf<RowKey?>(null) }
+    var sharing by remember { mutableStateOf<RowKey?>(null) }
+    var uploading by remember { mutableStateOf<RowKey?>(null) }
     // Switched on in Settings *and* holding a full set of credentials —
     // otherwise the button could only fail.
     val stravaReady = remember { StravaStore(ctx).isEnabled() }
@@ -132,7 +135,8 @@ fun DeviceActivitiesScreen(
         // Captured now: the switcher may move on while the fetch runs,
         // and the row belongs to the device it was listed from.
         val mac = resolvedMac ?: return
-        sharingTs = entry.timestamp
+        val key = RowKey(mac, entry.timestamp)
+        sharing = key
         scope.launch {
             val cached = UploadPipeline.activityFitFile(ctx, mac, entry.timestamp)
             val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
@@ -153,7 +157,8 @@ fun DeviceActivitiesScreen(
                     }
                 }
             }
-            sharingTs = null
+            // Only our own: a later share may have taken over since.
+            if (sharing == key) sharing = null
             when (outcome) {
                 is ShareOutcome.Ready -> {
                     // Two distinct failures, easily collapsed into one
@@ -183,7 +188,8 @@ fun DeviceActivitiesScreen(
      */
     fun sendToStrava(entry: FileTransfer.ActivityListEntry) {
         val mac = resolvedMac ?: return
-        stravaTs = entry.timestamp
+        val key = RowKey(mac, entry.timestamp)
+        uploading = key
         scope.launch {
             val cached = UploadPipeline.activityFitFile(ctx, mac, entry.timestamp)
             val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
@@ -200,7 +206,7 @@ fun DeviceActivitiesScreen(
                     name = null, // let Strava name it from start time + location
                 )
             }
-            stravaTs = null
+            if (uploading == key) uploading = null
             when (res) {
                 is StravaUploader.Result.Success ->
                     snackbar.showSnackbar(
@@ -221,6 +227,7 @@ fun DeviceActivitiesScreen(
     }
 
     LaunchedEffect(resolvedMac) { if (resolvedMac != null) refresh() }
+    val storage = rememberDeviceMemory(resolvedMac, refreshKey = entries)
 
     Scaffold(
         topBar = {
@@ -322,25 +329,27 @@ fun DeviceActivitiesScreen(
             } else {
                 items(entries.size) { idx ->
                     val e = entries[idx]
+                    val rowKey = resolvedMac?.let { RowKey(it, e.timestamp) }
                     ActivityRow(
                         entry = e,
-                        downloading = downloadingTs == e.timestamp,
-                        sharing = sharingTs == e.timestamp,
+                        downloading = rowKey != null && downloading == rowKey,
+                        sharing = rowKey != null && sharing == rowKey,
                         stravaEnabled = stravaReady,
-                        stravaBusy = stravaTs == e.timestamp,
+                        stravaBusy = rowKey != null && uploading == rowKey,
                         onShare = { share(e) },
                         onSendToStrava = { sendToStrava(e) },
-                        onDownload = {
-                            downloadingTs = e.timestamp
+                        onDownload = onDownload@{
+                            val key = rowKey ?: return@onDownload
+                            downloading = key
                             scope.launch {
                                 val res = withContext(Dispatchers.IO) {
                                     UploadPipeline.downloadActivity(
                                         ctx,
                                         e.timestamp,
-                                        targetMac = resolvedMac,
+                                        targetMac = key.mac,
                                     )
                                 }
-                                downloadingTs = null
+                                if (downloading == key) downloading = null
                                 when (res) {
                                     is UploadPipeline.Result.Success ->
                                         snackbar.showSnackbar(
@@ -372,7 +381,7 @@ fun DeviceActivitiesScreen(
             // answers ("do I need to?") is asked while looking at these
             // rows. Keyed on `entries` so a delete re-reads and the
             // freed space shows up.
-            item { DeviceStorageRow(mac = resolvedMac, refreshKey = entries) }
+            item { DeviceStorageRow(storage) }
         }
     }
 
@@ -460,6 +469,9 @@ fun DeviceActivitiesScreen(
 }
 
 private const val TAG = "DeviceActivities"
+
+/** One activity row on one device — what a busy spinner belongs to. */
+private data class RowKey(val mac: String, val timestamp: Long)
 
 private sealed interface ShareOutcome {
     data class Ready(val file: File) : ShareOutcome

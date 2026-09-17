@@ -27,8 +27,30 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /**
- * Flash usage for [mac], shown at the foot of the routes and
- * activities lists.
+ * Flash usage for [mac], or null until the device answers.
+ *
+ * Call this from the screen, not from inside a LazyColumn item: item
+ * state is dropped when the row scrolls out of view, and each return
+ * would mean another BLE round-trip.
+ *
+ * Keyed on [refreshKey] as well as [mac] so a delete-all re-reads and
+ * the freed space is visible immediately — that number moving is the
+ * confirmation the user actually wanted.
+ */
+@Composable
+fun rememberDeviceMemory(mac: String?, refreshKey: Any? = null): DeviceMemory.Info? {
+    val ctx = LocalContext.current
+    var info by remember(mac) { mutableStateOf<DeviceMemory.Info?>(null) }
+    LaunchedEffect(mac, refreshKey) {
+        if (mac == null) return@LaunchedEffect
+        info = withContext(Dispatchers.IO) { UploadPipeline.deviceMemory(ctx, targetMac = mac) }
+    }
+    return info
+}
+
+/**
+ * Flash usage, shown at the foot of the routes and activities lists.
+ * [info] comes from [rememberDeviceMemory].
  *
  * It belongs next to the lists rather than on a screen of its own:
  * "should I delete these?" is asked while looking at them, and
@@ -43,18 +65,7 @@ import java.util.Locale
  * testTag: `device_storage`.
  */
 @Composable
-fun DeviceStorageRow(mac: String?, refreshKey: Any? = null) {
-    val ctx = LocalContext.current
-    var info by remember(mac) { mutableStateOf<DeviceMemory.Info?>(null) }
-
-    // Keyed on refreshKey as well as mac so a delete-all re-reads and
-    // the freed space is visible immediately — that number moving is
-    // the confirmation the user actually wanted.
-    LaunchedEffect(mac, refreshKey) {
-        if (mac == null) return@LaunchedEffect
-        info = withContext(Dispatchers.IO) { UploadPipeline.deviceMemory(ctx, targetMac = mac) }
-    }
-
+fun DeviceStorageRow(info: DeviceMemory.Info?) {
     val shown = info ?: return
     Card(
         modifier = Modifier

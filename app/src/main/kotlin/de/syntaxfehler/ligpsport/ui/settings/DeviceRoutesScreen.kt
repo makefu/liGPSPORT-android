@@ -95,6 +95,7 @@ fun DeviceRoutesScreen(
     }
 
     LaunchedEffect(resolvedMac) { if (resolvedMac != null) refresh() }
+    val storage = rememberDeviceMemory(resolvedMac, refreshKey = routes)
 
     Scaffold(
         topBar = {
@@ -208,7 +209,7 @@ fun DeviceRoutesScreen(
                 }
             }
             // See the twin in DeviceActivitiesScreen.
-            item { DeviceStorageRow(mac = resolvedMac, refreshKey = routes) }
+            item { DeviceStorageRow(storage) }
         }
     }
 
