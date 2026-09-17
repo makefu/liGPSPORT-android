@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import de.syntaxfehler.ligpsport.ble.UploadPipeline
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /**
@@ -20,6 +22,15 @@ object StravaUploader {
 
     private const val POLL_INTERVAL_MS = 1_500L
     private const val POLL_TIMEOUT_MS = 90_000L
+
+    /**
+     * Serialises every refresh grant. Strava rotates the refresh token
+     * on each one and rejects the superseded value, so two concurrent
+     * refreshes from the same stored token (two rows uploading, or an
+     * upload racing Test connection) can leave the older response
+     * saved last and the account unusable until the token is re-pasted.
+     */
+    private val refreshLock = Mutex()
 
     sealed interface Result {
         /**
@@ -68,7 +79,7 @@ object StravaUploader {
 
         val client = clientFactory(credentials)
         return try {
-            val tokens = ensureFreshToken(store, client, credentials)
+            val tokens = ensureFreshToken(store, client)
             val ticket = client.uploadFit(
                 accessToken = tokens.accessToken,
                 file = fit,
@@ -127,9 +138,15 @@ object StravaUploader {
             ?: return TestResult.Failed("fill in all three fields first")
         val client = clientFactory(credentials)
         return try {
-            val tokens = client.refresh(credentials.refreshToken)
+            val tokens = refreshLock.withLock {
+                val refreshed = client.refresh(currentRefreshToken(store))
+                // Saved before the athlete lookup: the old refresh token
+                // is dead from here on, whatever that call does.
+                store.saveTokens(refreshed)
+                refreshed
+            }
             val name = client.athleteName(tokens.accessToken)
-            store.saveTokens(tokens.copy(athleteName = name))
+            if (name != null) store.saveTokens(tokens.copy(athleteName = name))
             TestResult.Ok(name)
         } catch (e: StravaClient.StravaException) {
             TestResult.Failed(e.message ?: "Strava rejected the credentials")
@@ -164,21 +181,31 @@ object StravaUploader {
      * response is persisted rather than just the access token —
      * dropping the rotated value would strand the account after the
      * six-hour access token expired.
+     *
+     * The cache check and the refresh token are both read under
+     * [refreshLock], not taken from the credentials [upload] read at
+     * the start: that was before a BLE fetch of tens of seconds, and
+     * another upload may have rotated the token meanwhile — in which
+     * case its fresh access token is simply reused.
      */
-    private suspend fun ensureFreshToken(
+    internal suspend fun ensureFreshToken(
         store: StravaStore,
         client: StravaClient,
-        credentials: StravaStore.Credentials,
-    ): StravaStore.Tokens {
-        val now = System.currentTimeMillis() / 1000L
+        nowEpochSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
+    ): StravaStore.Tokens = refreshLock.withLock {
+        val now = nowEpochSeconds()
         store.cachedTokens()
             ?.takeIf { it.expiresAtEpochSeconds > now + EXPIRY_MARGIN_SECONDS }
-            ?.let { return it }
-        val refreshed = client.refresh(credentials.refreshToken)
+            ?.let { return@withLock it }
+        val refreshed = client.refresh(currentRefreshToken(store))
         val merged = refreshed.copy(athleteName = refreshed.athleteName ?: store.athleteName())
         store.saveTokens(merged)
-        return merged
+        merged
     }
+
+    private fun currentRefreshToken(store: StravaStore): String =
+        store.credentials()?.refreshToken
+            ?: throw StravaClient.StravaException("no Strava credentials — add them in Settings → Strava")
 
     private suspend fun awaitProcessing(
         client: StravaClient,
