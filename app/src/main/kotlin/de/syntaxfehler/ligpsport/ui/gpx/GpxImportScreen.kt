@@ -284,7 +284,7 @@ private fun loadGpx(
     ctx: Context,
     uri: Uri,
 ): Result<Picked> = runCatching {
-    val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    val bytes = ctx.contentResolver.openInputStream(uri)?.use { GpxParser.readCapped(it) }
         ?: error("could not open that file")
     if (bytes.isEmpty()) error("that file is empty")
     val route = GpxParser.parse(bytes)

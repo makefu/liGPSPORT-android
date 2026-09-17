@@ -86,7 +86,7 @@ private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
         }
         try {
             val bytes = withContext(Dispatchers.IO) {
-                ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ctx.contentResolver.openInputStream(uri)?.use { GpxParser.readCapped(it) }
                     ?: error("could not open stream for $uri")
             }
             val parsed = withContext(Dispatchers.Default) { GpxParser.parse(bytes) }

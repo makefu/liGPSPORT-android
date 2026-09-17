@@ -15,6 +15,32 @@ import org.xml.sax.helpers.DefaultHandler
  * (single trkseg) and OsmAnd exports.
  */
 object GpxParser {
+    /**
+     * Largest GPX a picked or shared document may be. A multi-hour ride
+     * is a few MB; the pickers also accept `application/octet-stream`,
+     * so without a cap a stray video would be read whole into memory.
+     */
+    const val MAX_GPX_BYTES = 32 * 1024 * 1024
+
+    /**
+     * Read [input] fully, refusing anything over [maxBytes]. Counts what
+     * is actually read rather than trusting a content provider's
+     * reported size, which is optional and not always right.
+     */
+    fun readCapped(input: InputStream, maxBytes: Int = MAX_GPX_BYTES): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (out.size() + n > maxBytes) {
+                throw RouteParseError("file is larger than ${maxBytes / (1024 * 1024)} MB; not a route GPX")
+            }
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
+    }
+
     fun parse(input: InputStream, defaultName: String = "Route"): RouteData {
         val factory = SAXParserFactory.newInstance().apply { isNamespaceAware = false }
         val parser = factory.newSAXParser()
