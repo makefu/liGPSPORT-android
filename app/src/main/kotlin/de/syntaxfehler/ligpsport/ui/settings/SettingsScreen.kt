@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -62,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -922,6 +924,11 @@ private fun StravaSection() {
                         onValueChange = { clientId = it },
                         singleLine = true,
                         label = { Text("Client ID") },
+                        // Strava client ids are plain integers.
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            autoCorrectEnabled = false,
+                        ),
                         modifier = Modifier.fillMaxWidth().testTag("strava_client_id"),
                     )
                     SecretField(
@@ -1050,6 +1057,13 @@ private fun SecretField(
         } else {
             PasswordVisualTransformation()
         },
+        // Opaque tokens: IME suggestions and autocorrect can only
+        // mangle them, and a password keyboard keeps them out of the
+        // IME's learned words.
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            autoCorrectEnabled = false,
+        ),
         modifier = Modifier.fillMaxWidth().testTag(testTag),
     )
 }
