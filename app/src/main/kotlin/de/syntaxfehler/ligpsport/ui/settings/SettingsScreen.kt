@@ -960,6 +960,12 @@ private fun StravaSection() {
                                         StravaUploader.testConnection(ctx)
                                     }
                                     testing = false
+                                    // A successful test rotated the refresh
+                                    // token in the store. Leaving the pasted
+                                    // one in the field would mark the form
+                                    // dirty, and the next Save would write
+                                    // the superseded token back.
+                                    refreshToken = store.refreshToken()
                                     status = when (res) {
                                         is StravaUploader.TestResult.Ok ->
                                             (
