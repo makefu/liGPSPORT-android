@@ -129,9 +129,12 @@ fun DeviceActivitiesScreen(
      * without forcing a separate download tap.
      */
     fun share(entry: FileTransfer.ActivityListEntry) {
+        // Captured now: the switcher may move on while the fetch runs,
+        // and the row belongs to the device it was listed from.
+        val mac = resolvedMac ?: return
         sharingTs = entry.timestamp
         scope.launch {
-            val cached = UploadPipeline.activityFitFile(ctx, entry.timestamp)
+            val cached = UploadPipeline.activityFitFile(ctx, mac, entry.timestamp)
             val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
             // Fire-and-forget: showSnackbar() suspends until the snackbar is
             // dismissed, so awaiting it would stall the fetch it announces.
@@ -143,7 +146,7 @@ fun DeviceActivitiesScreen(
                 if (haveIt) {
                     ShareOutcome.Ready(cached)
                 } else {
-                    when (val res = UploadPipeline.downloadActivity(ctx, entry.timestamp)) {
+                    when (val res = UploadPipeline.downloadActivity(ctx, entry.timestamp, targetMac = mac)) {
                         is UploadPipeline.Result.Success ->
                             ShareOutcome.Ready(res.activitySavedPath?.let(::File) ?: cached)
                         is UploadPipeline.Result.Failure -> ShareOutcome.Error(res.reason)
@@ -179,9 +182,10 @@ fun DeviceActivitiesScreen(
      * for an activity id rather than treating the POST as done.
      */
     fun sendToStrava(entry: FileTransfer.ActivityListEntry) {
+        val mac = resolvedMac ?: return
         stravaTs = entry.timestamp
         scope.launch {
-            val cached = UploadPipeline.activityFitFile(ctx, entry.timestamp)
+            val cached = UploadPipeline.activityFitFile(ctx, mac, entry.timestamp)
             val haveIt = withContext(Dispatchers.IO) { cached.isFile && cached.length() > 0L }
             scope.launch {
                 snackbar.showSnackbar(
@@ -191,7 +195,8 @@ fun DeviceActivitiesScreen(
             val res = withContext(Dispatchers.IO) {
                 StravaUploader.upload(
                     ctx,
-                    entry.timestamp,
+                    deviceMac = mac,
+                    timestamp = entry.timestamp,
                     name = null, // let Strava name it from start time + location
                 )
             }

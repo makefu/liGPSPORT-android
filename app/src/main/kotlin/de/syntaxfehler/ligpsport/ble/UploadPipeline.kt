@@ -598,7 +598,7 @@ object UploadPipeline {
                     return@withDevice Result.Failure("corrupt download: ${verdict.reason}")
                 }
             }
-            val saved = saveActivityFit(context, timestamp, download.content)
+            val saved = saveActivityFit(context, paired.mac, timestamp, download.content)
             Result.Success(
                 deviceName = paired.name,
                 deviceMac = paired.mac,
@@ -631,9 +631,18 @@ object UploadPipeline {
      * BLE transfer — activity downloads are slow enough (tens of seconds
      * for a long ride) that re-fetching one just to share it is worth
      * avoiding. The file may not exist; check before use.
+     *
+     * Keyed by device as well as timestamp: two paired computers can
+     * hold activities with the same timestamp, and a timestamp-only
+     * cache would hand one device's ride out as the other's. The MAC
+     * goes into a subdirectory rather than the file name, which stays
+     * what the user sees when sharing and what Strava dedupes on.
      */
-    fun activityFitFile(context: Context, timestamp: Long): java.io.File {
-        val dir = java.io.File(context.getExternalFilesDir(null), "activities")
+    fun activityFitFile(context: Context, deviceMac: String, timestamp: Long): java.io.File {
+        val dir = java.io.File(
+            java.io.File(context.getExternalFilesDir(null), "activities"),
+            deviceMac.replace(":", "").uppercase(Locale.US),
+        )
         val nameFmt = SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
@@ -645,9 +654,14 @@ object UploadPipeline {
         return java.io.File(dir, "${nameFmt.format(Date(unix * 1000L))}.fit")
     }
 
-    private fun saveActivityFit(context: Context, timestamp: Long, content: ByteArray): java.io.File {
+    private fun saveActivityFit(
+        context: Context,
+        deviceMac: String,
+        timestamp: Long,
+        content: ByteArray,
+    ): java.io.File {
         // Scoped external storage — no runtime permissions needed.
-        val out = activityFitFile(context, timestamp)
+        val out = activityFitFile(context, deviceMac, timestamp)
         out.parentFile?.mkdirs()
         out.writeBytes(content)
         return out

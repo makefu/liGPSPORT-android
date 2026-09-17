@@ -38,6 +38,10 @@ object StravaUploader {
     }
 
     /**
+     * @param deviceMac the paired device holding the activity. Required,
+     *   not defaulted to the first paired one: with two computers the
+     *   same timestamp can exist on both, and guessing would upload the
+     *   wrong ride.
      * @param timestamp the activity's device-side id (epoch seconds).
      * @param name optional activity title; Strava derives one from the
      *   start time and location when null.
@@ -49,6 +53,7 @@ object StravaUploader {
      */
     suspend fun upload(
         context: Context,
+        deviceMac: String,
         timestamp: Long,
         name: String? = null,
         muteFromFeed: Boolean = true,
@@ -58,7 +63,7 @@ object StravaUploader {
         val credentials = store.credentials()
             ?: return Result.Failure("no Strava credentials — add them in Settings → Strava")
 
-        val fit = ensureFit(context, timestamp)
+        val fit = ensureFit(context, deviceMac, timestamp)
             ?: return Result.Failure("could not get the FIT off the device")
 
         val client = clientFactory(credentials)
@@ -141,10 +146,10 @@ object StravaUploader {
      * cache-first rule the share button uses — an activity download runs
      * to tens of seconds, so paying for it twice is worth avoiding.
      */
-    private suspend fun ensureFit(context: Context, timestamp: Long): File? {
-        val cached = UploadPipeline.activityFitFile(context, timestamp)
+    private suspend fun ensureFit(context: Context, deviceMac: String, timestamp: Long): File? {
+        val cached = UploadPipeline.activityFitFile(context, deviceMac, timestamp)
         if (cached.isFile && cached.length() > 0L) return cached
-        return when (val res = UploadPipeline.downloadActivity(context, timestamp)) {
+        return when (val res = UploadPipeline.downloadActivity(context, timestamp, targetMac = deviceMac)) {
             is UploadPipeline.Result.Success ->
                 res.activitySavedPath?.let(::File)?.takeIf { it.isFile } ?: cached.takeIf { it.isFile }
             is UploadPipeline.Result.Failure -> null
