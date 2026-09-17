@@ -39,6 +39,14 @@ END_LON="9.2293"
 
 ROUTERS="${LIGPSPORT_ROUTERS:-straightline brouter osrm}"
 
+# Result waits for anything that lists files. The app retries an
+# unanswered LIST_GET at 5 s, 15 s and 25 s (FileTransfer
+# LIST_ATTEMPT_TIMEOUTS_MS), so a device that only answers the resend
+# replies up to 45 s in; the rest is connect slack. DELETE_ALL_ROUTES
+# lists first and then waits up to 15 s for the delete itself.
+LIST_WAIT_S=60
+DELETE_ALL_ROUTES_WAIT_S=75
+
 mkdir -p "${REPO_ROOT}/tmp"
 LOG_FILE="${REPO_ROOT}/tmp/e2e-$(date +%Y%m%dT%H%M%S).log"
 
@@ -200,7 +208,7 @@ fi
 #    the device may legitimately have nothing to delete.
 if [ "${LIGPSPORT_NO_CLEANUP:-0}" != "1" ]; then
     set +e
-    broadcast_and_wait DELETE_ALL_ROUTES 30 --es confirm true
+    broadcast_and_wait DELETE_ALL_ROUTES "$DELETE_ALL_ROUTES_WAIT_S" --es confirm true
     cleanup_rc=$?
     set -e
     if [ "$cleanup_rc" -ne 0 ]; then
@@ -320,7 +328,7 @@ if [ "${LIGPSPORT_TEST_DELETE_ALL:-1}" = "1" ]; then
     # Sanity: both routes show up in LIST_GET. The BSC200 returns an
     # empty list when the request omits the index range — we depend
     # on the v1.2.0 LIST_GET wire format here.
-    broadcast_and_wait LIST_ROUTES 15
+    broadcast_and_wait LIST_ROUTES "$LIST_WAIT_S"
     LIST_LINE="$LAST_LINE"
     if [[ "$LIST_LINE" != *"$DA_FID1"* ]] || [[ "$LIST_LINE" != *"$DA_FID2"* ]]; then
         echo "ERROR: LIST_ROUTES missing seeded ids ($DA_FID1 and/or $DA_FID2)" >&2
@@ -330,12 +338,12 @@ if [ "${LIGPSPORT_TEST_DELETE_ALL:-1}" = "1" ]; then
     echo "    seeded ids visible in LIST_GET ✓"
 
     # Wipe.
-    broadcast_and_wait DELETE_ALL_ROUTES 30 --es confirm true
+    broadcast_and_wait DELETE_ALL_ROUTES "$DELETE_ALL_ROUTES_WAIT_S" --es confirm true
 
     # Verify the *inactive* route (DA_FID1) is gone. The active route
     # (DA_FID2 — last upload's FILE_USE made it active) is firmware-
     # protected; FILES_DEL acks status=0 but the route stays.
-    broadcast_and_wait LIST_ROUTES 15
+    broadcast_and_wait LIST_ROUTES "$LIST_WAIT_S"
     LIST_AFTER="$LAST_LINE"
     if [[ "$LIST_AFTER" == *"$DA_FID1"* ]]; then
         echo "ERROR: inactive route $DA_FID1 still present after DELETE_ALL_ROUTES" >&2
@@ -358,7 +366,7 @@ echo "============================================="
 echo "  Activities verification"
 echo "============================================="
 
-broadcast_and_wait LIST_ACTIVITIES 30
+broadcast_and_wait LIST_ACTIVITIES "$LIST_WAIT_S"
 ACT_COUNT=$(field "count")
 if [ -z "$ACT_COUNT" ] || [ "$ACT_COUNT" = "0" ]; then
     echo "    no activities to verify, skipping"
@@ -391,7 +399,7 @@ else
     echo "    deleted ts=$ACT_TS ✓"
 
     # Verify the timestamp is gone from the next LIST_ACTIVITIES.
-    broadcast_and_wait LIST_ACTIVITIES 30
+    broadcast_and_wait LIST_ACTIVITIES "$LIST_WAIT_S"
     if [[ "$LAST_LINE" == *" a0_ts=${ACT_TS} "* ]] || \
        [[ "$LAST_LINE" == *" a0_ts=${ACT_TS}"$'\n'* ]] || \
        [[ "$LAST_LINE" == *" a0_ts=${ACT_TS}" ]]; then
@@ -407,7 +415,7 @@ fi
 if [ "${LIGPSPORT_RUN_DESTRUCTIVE:-0}" = "1" ]; then
     echo "    running destructive DELETE_ALL_ACTIVITIES"
     broadcast_and_wait DELETE_ALL_ACTIVITIES 30 --es confirm true
-    broadcast_and_wait LIST_ACTIVITIES 30
+    broadcast_and_wait LIST_ACTIVITIES "$LIST_WAIT_S"
     AFTER_COUNT=$(field "count")
     if [ "$AFTER_COUNT" != "0" ]; then
         echo "ERROR: DELETE_ALL_ACTIVITIES left count=$AFTER_COUNT (expected 0)" >&2
