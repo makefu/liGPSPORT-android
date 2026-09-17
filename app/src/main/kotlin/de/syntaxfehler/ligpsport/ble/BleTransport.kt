@@ -71,6 +71,14 @@ class BleTransport(
     // Observed on a BSC300T: a 20-byte TYPE_REQUEST frame (service=3)
     // landed 210,572 bytes into a 296,853-byte FIT download, displacing
     // 20 bytes of ride data and failing the FIT CRC.
+    //
+    // Guarded by [rxLock]: notifications reassemble on the Binder
+    // thread while [drain] and [pendingRx] run on the caller's, and
+    // [drain] is called precisely when a late reply may still be
+    // streaming in. The lock also covers [txChars], which
+    // [handleNotification] reads and [wireUpCharacteristics] rebuilds.
+    // Nothing under it suspends or blocks, so a plain monitor is fine.
+    private val rxLock = Any()
     private val rxBuffers = mutableMapOf<Channel, MutableList<Byte>>()
     private val rxExpected = mutableMapOf<Channel, Int>()
     private val received = KChannel<ReceivedFrame>(KChannel.UNLIMITED)
@@ -266,10 +274,13 @@ class BleTransport(
 
     override fun drain() {
         var dropped = 0
-        while (received.tryReceive().isSuccess) dropped++
-        val partial = rxBuffers.values.sumOf { it.size }
-        rxBuffers.clear()
-        rxExpected.clear()
+        var partial = 0
+        synchronized(rxLock) {
+            while (received.tryReceive().isSuccess) dropped++
+            partial = rxBuffers.values.sumOf { it.size }
+            rxBuffers.clear()
+            rxExpected.clear()
+        }
         // Worth saying out loud. Completed-but-unread frames mean some
         // earlier operation gave up before its answer arrived. Stranded
         // partial bytes mean a reply started and stopped — which would
@@ -280,8 +291,9 @@ class BleTransport(
         }
     }
 
-    override fun pendingRx(): Map<Channel, Pair<Int, Int?>> =
+    override fun pendingRx(): Map<Channel, Pair<Int, Int?>> = synchronized(rxLock) {
         rxBuffers.entries.associate { (channel, buf) -> channel to (buf.size to rxExpected[channel]) }
+    }
 
     override suspend fun close() {
         mutex.withLock {
@@ -322,6 +334,10 @@ class BleTransport(
     // ---- Internals ----
 
     private fun wireUpCharacteristics(g: BluetoothGatt) {
+        synchronized(rxLock) { rewire(g) }
+    }
+
+    private fun rewire(g: BluetoothGatt) {
         rxChars.clear()
         txChars.clear()
         // Re-wiring means the characteristic objects the buffers were
@@ -347,6 +363,10 @@ class BleTransport(
     }
 
     private fun handleNotification(c: BluetoothGattCharacteristic, data: ByteArray) {
+        synchronized(rxLock) { reassemble(c, data) }
+    }
+
+    private fun reassemble(c: BluetoothGattCharacteristic, data: ByteArray) {
         // No fallback to "the last channel we saw": mis-attributing a
         // notification is exactly what corrupts a download, so an
         // unrecognised characteristic is dropped loudly instead.
