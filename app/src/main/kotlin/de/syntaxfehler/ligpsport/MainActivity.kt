@@ -98,7 +98,7 @@ private fun AppNav() {
         // Swipe-to-open is off on the map, where an edge drag is a pan;
         // the FAB is the way in there. Swipe-to-close always works.
         gesturesEnabled = drawer.isOpen || (fromDrawer && current != AppDestination.Map),
-        drawerContent = { AppDrawerContent(current = current, onSelect = ::go) },
+        drawerContent = { AppDrawerContent(drawerState = drawer, current = current, onSelect = ::go) },
     ) {
         NavHost(navController = nav, startDestination = AppDestination.Map.route) {
             composable(AppDestination.Map.route) {

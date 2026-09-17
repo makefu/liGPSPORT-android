@@ -8,6 +8,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -64,14 +65,19 @@ enum class AppDestination(
  * screen and full-bleed — a permanent bottom bar would cut ~80dp off
  * it for navigation the user needs a few times a session.
  *
+ * Takes [drawerState] because only that `ModalDrawerSheet` overload
+ * installs the back handler; without it, back while the drawer is open
+ * finishes the activity instead of closing the drawer.
+ *
  * testTags: `drawer_sheet`, `drawer_<route>`.
  */
 @Composable
 fun AppDrawerContent(
+    drawerState: DrawerState,
     current: AppDestination?,
     onSelect: (AppDestination) -> Unit,
 ) {
-    ModalDrawerSheet(modifier = Modifier.testTag("drawer_sheet")) {
+    ModalDrawerSheet(drawerState = drawerState, modifier = Modifier.testTag("drawer_sheet")) {
         Column(Modifier.padding(horizontal = 28.dp, vertical = 24.dp)) {
             Text(
                 "liGPSPORT",
