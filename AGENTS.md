@@ -117,7 +117,7 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.PAIR` | service | — | `name=`, `mac=` |
 | `…action.UNPAIR` | inline | — | — |
 | `…action.STATUS` | inline | — | `bt_enabled=`, `paired_mac=`, `paired_name=` |
-| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `nav_started=` (true/false), `device_status=` |
+| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `nav_started=` (true/false; absent when navigation wasn't attempted), `device_status=` |
 | `…action.PLAN_AND_UPLOAD` | service | `--ef end_lat,end_lon` (required); `--ef start_lat,start_lon` optional — if absent, the service resolves current location via `MockLocationStore` → `FusedLocationProviderClient.getCurrentLocation` → `lastLocation`; optional `--es profile`, `--el file_id`, `--es name` | `provider=` (which router was used), plus all UPLOAD keys |
 | `…action.LIST_ROUTES` | service | — | `count=`, `r<N>_id=`, `r<N>_name=`, `r<N>_dist_m=` |
 | `…action.NAV_STATUS` | service | — | `is_navigating=true\|false`, `active_route_id=`, `active_route_name=` — reads `ROUTE_PLAN LIST_GET` and scans for `enum_USED_STATUS = 1` (PROTOCOL.md §7.3). `DEV_STATUS.navi_status` is documented but never populated by BSC200 firmware; the LIST_GET route-status byte is the only honest signal. |
@@ -215,9 +215,12 @@ new destination.
 
 ### Auto-start navigation after upload
 
-Every successful `UploadPipeline.uploadGpx` issues a follow-up
+A successful `UploadPipeline.uploadGpx` issues a follow-up
 `FileTransfer.startNavigation` (`ROUTE_PLAN FILE_USE`, op=5) once the
-device acks the chunked upload. This mirrors the iGPSPORT app's
+device acks the chunked upload, unless the caller passes
+`startNavigation = false`. The map does not; the GPX imports (Upload
+GPX screen, share sheet) do, since filing a route away shouldn't take
+over the head unit. This mirrors the iGPSPORT app's
 "send and use" flow (`RoadBookSearchActivity.sendFileToDevice` →
 `IGPDeviceManager.setRoutePlanFile`). The wire format is the gen-4
 single merged write of (20-byte head ‖ protobuf body) on the
@@ -225,7 +228,8 @@ FOURTH characteristic, *not* the body/header split across two
 characteristics — see PROTOCOL.md §7.2 for the byte-for-byte
 reference and the smali source. Failure is non-fatal (the upload
 itself still counts as success); the result line surfaces
-`nav_started=true|false` either way.
+`nav_started=true|false`, and omits the key when navigation was not
+attempted.
 
 ### Other UX invariants
 
@@ -262,8 +266,9 @@ itself still counts as success); the result line surfaces
   destination before the lookup returns, the stale result is
   discarded.
 - **The destination name becomes the upload file name**, sanitised
-  for the BSC200 firmware (ASCII alphanumerics + `_-.`, spaces →
-  `_`, max 32 chars). See `ui/upload/UploadScreen.kt#sanitiseFileName`
+  for the BSC200 firmware (ASCII alphanumerics, spaces and `_-.`;
+  whitespace runs collapse to one space; max 32 chars). Spaces are
+  kept: the device displays them fine. See `ui/upload/UploadScreen.kt#sanitiseFileName`
   and its unit-test contract in
   `app/src/test/kotlin/.../ui/upload/FileNameSanitiserTest.kt`. The
   adb harness path is unaffected — it passes its own `--es name`

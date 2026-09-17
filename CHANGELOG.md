@@ -138,7 +138,7 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
     a device that genuinely holds nothing — of the two things the
     screen could say, it picked the wrong one and said it confidently.
     It is now a `DeviceTimeoutException`, surfaced as "the device
-    didn't answer within 45s — try again".
+    didn't answer after 3 tries over 45s".
   - A LIST_GET is now retried (5 s, then 15 s, then 25 s) rather than
     waited on once. The first request after a connect is routinely
     never answered at all — observed timing out at a full 45 s, then
