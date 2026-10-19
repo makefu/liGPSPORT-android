@@ -6,8 +6,174 @@ the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
 
+### Added
+
+- **Navigation drawer** reaching Map, Activities on device, Routes on
+  device and Settings directly. Until now the map's only exit was a
+  gear FAB into Settings, and the two device screens were buried two
+  levels down behind a paired-device row — fine with one screen to
+  reach, unworkable as the app grows. The gear FAB became the menu
+  button, since a full-bleed map has no app bar to hang a hamburger
+  off; Settings is an item in the drawer like everything else.
+  - Selecting a drawer entry pops back to the map first, so the back
+    stack stays one deep instead of accumulating a chain of siblings.
+  - Swipe-to-open is disabled on the map, where an edge drag is a pan.
+  - **The device screens carry their own device switcher** — a
+    dropdown in the top bar, inert when only one device is paired.
+    Reached from the drawer there is no device to pick beforehand, so
+    the choice had to move into the screen. The Settings device rows
+    still preselect one and still get a back arrow; the drawer entry
+    defaults to the first paired device and gets the hamburger.
+- **Device storage** at the foot of the Routes and Activities lists —
+  "412 MB free of 1.9 GB" plus a usage bar. "Delete all" was otherwise
+  a decision made blind, and the question is asked while looking at
+  the rows, so it lives there rather than on a screen of its own. It
+  re-reads after a delete, so the freed space is visible.
+  - Reads `FACTORY MEMORY_GET` (op 5), returning
+    `memory_message{total, remain}` — the same service
+    `LocationInjector` already uses for the position prior.
+  - Confirmed on a 32 GB BSC200, which reads "20.3 GB free of
+    30.0 GB". `memory_message` states no unit; KiB is established from
+    that device and only that device, so the raw pair stays logged at
+    INFO — if another model reads wrong by a round factor, the fix is
+    `DeviceMemory.BYTES_PER_UNIT`.
+  - Every failure collapses to showing nothing: a firmware that
+    ignores the operation times out and the card simply doesn't
+    appear, rather than putting an error on someone else's screen.
+- **Upload a GPX from the app** (menu → Upload GPX). Pick a `.gpx`
+  through the system file picker, see its point count and distance,
+  and send it to every paired device — the same fan-out a route upload
+  from the map does.
+  - The app could already receive a GPX, but only from the outside:
+    `ShareImportActivity` handles an inbound share from OsmAnd or
+    Files, which means it is unreachable unless you start in another
+    app. This is the same job from the other direction.
+  - The route is named after the file rather than the GPX's own
+    `<name>`, which is routinely absent or a generic "Track"; the
+    extension is dropped and the rest sanitised to what CNX accepts.
+  - The picker accepts `application/octet-stream` and `text/xml`
+    alongside `application/gpx+xml`, because `.gpx` is served as all
+    three depending on where it came from and filtering to the correct
+    type alone hides the user's own file.
+- **Send recorded activities to Strava** (Settings → Activities on
+  device → cloud button). Fetches the FIT over BLE if it isn't already
+  cached, refreshes the access token when stale, POSTs to
+  `/api/v3/uploads`, then polls until Strava has turned the upload into
+  an activity. `external_id` is the FIT filename, so re-uploading a
+  ride is rejected as a duplicate rather than creating a twin.
+  See [docs/STRAVA.md](docs/STRAVA.md).
+  - **Opt-in, and configured in the app.** Settings → Strava has a
+    switch plus fields for a client id, client secret and refresh
+    token from your own API application, with a *Test connection*
+    button that mints an access token so a bad paste is caught there
+    rather than at the first upload. The upload button appears only
+    once the switch is on *and* all three values are present — a
+    button that can only fail is worse than no button.
+  - All three values are required because Strava's access tokens
+    expire after six hours and only the `refresh_token` grant — which
+    needs the client id and secret — can mint a new one. A pasted
+    access token alone would stop working the same day. Strava also
+    rotates the refresh token on every use, so the stored value is
+    replaced as the app goes.
+  - A build that carries credentials in `app/strava.properties` (or
+    the `LIGPSPORT_STRAVA_*` env vars, now including
+    `_REFRESH_TOKEN`) pre-fills those fields on first run and switches
+    the feature on, so a personal build needs no setup. They are only
+    defaults: edits and *Forget credentials* win from then on. The
+    client secret is still baked into such an APK — don't distribute
+    one.
+  - Uploads are muted from followers' feeds via `hide_from_home`, so
+    they raise no notifications. This is **not** privacy: Strava's
+    Everyone/Followers/Only You visibility isn't exposed through the
+    API and the old `private` upload flag is defunct. Set the account
+    default on Strava if you need that.
+  - No in-app OAuth flow: it would need a registered callback domain
+    and gains nothing over pasting a refresh token, since the client
+    secret has to be in the app either way.
+  - Sharing a FIT into the Strava app is not an alternative: its only
+    `ACTION_SEND` filters are `text/plain` and `image/*`.
+
+### Changed
+
+- **Importing a GPX no longer hijacks the head unit into navigation.**
+  Every upload used to finish with `ROUTE_PLAN FILE_USE`, which is
+  right for the map — planning a route and hitting Upload is a
+  commitment to ride it — and wrong for filing one away. Upload GPX
+  and the share sheet now upload only; the map is unchanged.
+  `UploadPipeline.uploadGpx`/`uploadGpxAll` take `startNavigation`,
+  default true.
+- **Route names keep their spaces.** `sanitiseFileName` folded
+  whitespace to `_` on the assumption the firmware wanted it; routes
+  uploaded by the Python tool keep their spaces and display fine, so
+  the underscores were ours and only made names uglier. The non-ASCII
+  strip and 32-char cap stay — both untested rather than known, and a
+  dropped umlaut is a cheaper mistake than a rejected upload.
+- **The activity share button (v1.3.0, @mbeutelspacher) no longer
+  re-downloads a FIT it already has.** An activity download takes tens
+  of seconds, so sharing a ride you just pulled off the device meant
+  waiting through a second transfer for bytes already on the phone.
+  `UploadPipeline.activityFitFile` exposes the deterministic download
+  path, and the share path uses the cached file when one exists,
+  announcing the BLE pull in a snackbar when it doesn't — otherwise the
+  button reads as hung. Failures to build the content URI and failures
+  to find an app that accepts the intent are now reported separately
+  instead of collapsing into one misleading message.
+
 ### Fixed
 
+- **A GPX import reported "Upload failed: uploaded".** Skipping the
+  navigation-start step for library-style imports accidentally routed
+  a *successful* upload down the failure branch, so it was reported as
+  a failure carrying the success message. The route was on the device
+  the whole time. Upload success and navigation start are now
+  independent, and `navStarted` is null — rather than false — when
+  navigation was never attempted.
+- **"No routes" / "No activities" on the first load.** The first
+  LIST_GET of each kind after the app starts takes longer than the old
+  10 s timeout — the device appears to index its flash once and serve a
+  cache afterwards, which is why a manual refresh came back instantly
+  with the full list. Three separate things made that look like an
+  empty device:
+  - A timed-out list returned `emptyList()`, rendering identically to
+    a device that genuinely holds nothing — of the two things the
+    screen could say, it picked the wrong one and said it confidently.
+    It is now a `DeviceTimeoutException`, surfaced as "the device
+    didn't answer after 3 tries over 45s".
+  - A LIST_GET is now retried (5 s, then 15 s, then 25 s) rather than
+    waited on once. The first request after a connect is routinely
+    never answered at all — observed timing out at a full 45 s, then
+    succeeding within seconds when sent again — so a longer wait just
+    buys more silence. The first probe is short because a request that
+    will be answered is answered quickly.
+  - `drain()` also clears half-reassembled frames. A reply that
+    started and stopped left bytes stranded in the per-channel buffer,
+    where the next reply on that channel was appended to them — so a
+    stalled frame didn't merely vanish, it corrupted its successor.
+  - Reassembly failures were invisible: `handleNotification` returns
+    silently while waiting for more bytes, so "nothing came back" and
+    "the reply stalled half-way" looked identical. The final timeout
+    now logs each channel's pending byte count.
+  - `deleteAllRoutes` listed routes without retrying, so an unanswered
+    list reported "no routes on device" — success, for a wipe that
+    never happened.
+  - Nothing drained the receive queue before sending. `frames()` is one
+    destructively-consumed, unbounded queue shared by every operation,
+    so a reply that arrived after its requester gave up sat there until
+    the next operation collected it and took it for its own answer —
+    the reason the refresh was *instant*. `Transport.drain()` is now
+    called immediately before each list request, so what comes back can
+    only answer what was just sent.
+- **Device storage read the wrong unit.** `memory_message` doesn't
+  state one and bytes was the initial guess; a 32 GB BSC200 reporting
+  `total=29314560` settles it as KiB (27.96 GiB — a formatted 32 GB
+  card after the head unit's own partitions). Bytes would have shown
+  that device as 29 MB.
+- **The instrumented test sources didn't compile.** `MapScreenEffectsTest`
+  still used `UploadButtonState.Success` as an object after the
+  multi-device fan-out turned it into a `data class(successes, total)`
+  — the two changes landed on separate branches and never conflicted,
+  so nothing caught it until the whole `androidTest` source set was
+  built again.
 - **Corrupted activity downloads.** `BleTransport` accumulated
   notifications from all four channels into one shared buffer, on the
   assumption that only one logical frame is ever in flight. That holds

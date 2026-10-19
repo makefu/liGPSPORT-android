@@ -47,4 +47,25 @@ class GpxParserTest {
             // expected
         }
     }
+
+    @Test
+    fun readCapped_returns_everything_up_to_the_cap() {
+        val bytes = ByteArray(200_000) { it.toByte() }
+        assertThat(GpxParser.readCapped(bytes.inputStream(), maxBytes = 200_000)).isEqualTo(bytes)
+    }
+
+    @Test
+    fun readCapped_refuses_a_file_over_the_cap() {
+        // An endless stream stands in for a huge file: the read must
+        // stop at the cap rather than at the end.
+        val endless = object : java.io.InputStream() {
+            override fun read(): Int = 0
+        }
+        try {
+            GpxParser.readCapped(endless, maxBytes = 100_000)
+            throw AssertionError("expected RouteParseError")
+        } catch (_: RouteParseError) {
+            // expected
+        }
+    }
 }

@@ -86,7 +86,7 @@ private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
         }
         try {
             val bytes = withContext(Dispatchers.IO) {
-                ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ctx.contentResolver.openInputStream(uri)?.use { GpxParser.readCapped(it) }
                     ?: error("could not open stream for $uri")
             }
             val parsed = withContext(Dispatchers.Default) { GpxParser.parse(bytes) }
@@ -126,7 +126,14 @@ private fun SharePreview(uri: Uri?, onFinish: () -> Unit) {
                             scope.launch {
                                 val fileName = sanitiseFileName(gpxName) ?: "shared_route"
                                 val result = withContext(Dispatchers.IO) {
-                                    UploadPipeline.uploadGpx(ctx, gpxBytes!!, fileName = fileName)
+                                    UploadPipeline.uploadGpx(
+                                        ctx,
+                                        gpxBytes!!,
+                                        fileName = fileName,
+                                        // An inbound share is "keep this
+                                        // for later", not "ride it now".
+                                        startNavigation = false,
+                                    )
                                 }
                                 when (result) {
                                     is UploadPipeline.Result.Success -> {

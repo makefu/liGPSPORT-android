@@ -42,6 +42,50 @@ android {
             else -> System.getenv("LIGPSPORT_AGPS_TOKEN") ?: ""
         }
         buildConfigField("String", "AGPS_TOKEN", "\"${agpsToken}\"")
+
+        // Strava API credentials — used by the "Send to Strava" action
+        // on recorded activities. See docs/STRAVA.md.
+        //
+        // These are only *defaults*: StravaStore.seedFromBuildConfig
+        // copies them into the editable Settings → Strava fields on
+        // first run and switches the feature on. A build with none of
+        // them installs fine — Strava simply starts switched off and
+        // the user pastes their own credentials in Settings.
+        //
+        // Same resolution order as the AGPS token above:
+        //   1. `strava.properties` next to this file (gitignored).
+        //   2. `LIGPSPORT_STRAVA_*` env vars.
+        //   3. Empty.
+        //
+        // The secret ends up in the APK; Strava requires it for the
+        // token refresh and has no PKCE alternative. Fine for a
+        // personal build, not for one you hand out.
+        val stravaPropsFile = file("strava.properties")
+        val stravaProps: Properties? = if (stravaPropsFile.isFile) {
+            Properties().apply { stravaPropsFile.inputStream().use { load(it) } }
+        } else {
+            null
+        }
+        fun stravaValue(key: String, env: String): String =
+            stravaProps?.getProperty(key)?.trim()
+                ?: System.getenv(env) ?: ""
+        buildConfigField(
+            "String",
+            "STRAVA_CLIENT_ID",
+            "\"${stravaValue("client_id", "LIGPSPORT_STRAVA_CLIENT_ID")}\"",
+        )
+        buildConfigField(
+            "String",
+            "STRAVA_CLIENT_SECRET",
+            "\"${stravaValue("client_secret", "LIGPSPORT_STRAVA_CLIENT_SECRET")}\"",
+        )
+        // Per-athlete, not per-application, so a shared build normally
+        // leaves this blank and each user pastes their own.
+        buildConfigField(
+            "String",
+            "STRAVA_REFRESH_TOKEN",
+            "\"${stravaValue("refresh_token", "LIGPSPORT_STRAVA_REFRESH_TOKEN")}\"",
+        )
     }
 
     // The release keystore is provided via environment variables when
@@ -170,6 +214,7 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    testImplementation(libs.ktor.client.mock)
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

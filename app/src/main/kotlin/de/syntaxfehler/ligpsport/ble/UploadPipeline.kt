@@ -166,6 +166,7 @@ object UploadPipeline {
         fileId: Long = System.currentTimeMillis() / 1000L,
         fileName: String = "route",
         targetMac: String? = null,
+        startNavigation: Boolean = true,
     ): Result {
         val paired = resolvePaired(context, targetMac) ?: return Result.Failure("no paired device")
 
@@ -225,28 +226,41 @@ object UploadPipeline {
                 fileName = fileName,
                 fileExtension = "cnx",
             )
-            if (r.success) {
+            if (!r.success) {
+                Result.Failure(r.message, r.status)
+            } else {
                 // Auto-start navigation. Mirrors the official app's
                 // "send and use" flow (RoadBookSearchActivity →
-                // setRoutePlanFile in the smali); the user already
-                // committed to navigating by hitting Upload, so any
-                // intermediate "now pick the route on the device"
-                // step is friction. Failure here doesn't fail the
-                // upload — the file is already on the device and
-                // can be activated manually.
-                val nav = try {
-                    FileTransfer.startNavigation(
-                        transport = transport,
-                        fileId = fileId,
-                        fileExtension = "cnx",
-                        name = fileName,
-                        totalDistanceM = route.distanceM.toLong(),
-                    )
-                } catch (e: Exception) {
-                    Log.w(TAG, "start-navigation: exception ${e.message}")
-                    FileTransfer.UploadResult(false, "exception: ${e.message}", -1)
+                // setRoutePlanFile in the smali); a user who planned a
+                // route on the map and hit Upload has already committed
+                // to riding it, so an intermediate "now pick the route
+                // on the device" step is friction. Failure here doesn't
+                // fail the upload — the file is already on the device
+                // and can be activated manually.
+                //
+                // Skipped for library-style imports (Upload GPX, the
+                // share sheet), where the file is being filed away
+                // rather than ridden now. Skipping it must not touch
+                // whether the *upload* succeeded — the two are
+                // independent, and conflating them reported a perfectly
+                // good upload as "Upload failed: uploaded".
+                val nav = if (startNavigation) {
+                    try {
+                        FileTransfer.startNavigation(
+                            transport = transport,
+                            fileId = fileId,
+                            fileExtension = "cnx",
+                            name = fileName,
+                            totalDistanceM = route.distanceM.toLong(),
+                        )
+                    } catch (e: Exception) {
+                        Log.w(TAG, "start-navigation: exception ${e.message}")
+                        FileTransfer.UploadResult(false, "exception: ${e.message}", -1)
+                    }
+                } else {
+                    null
                 }
-                if (!nav.success) {
+                if (nav != null && !nav.success) {
                     Log.w(TAG, "start-navigation rejected (status=${nav.status}): ${nav.message}")
                 }
                 Result.Success(
@@ -259,10 +273,10 @@ object UploadPipeline {
                     agpsBytes = agpsBytes,
                     seedLat = seedFix?.latitude,
                     seedLon = seedFix?.longitude,
-                    navStarted = nav.success,
+                    // null, not false: navigation wasn't attempted, which
+                    // is not the same as having been refused.
+                    navStarted = nav?.success,
                 )
-            } else {
-                Result.Failure(r.message, r.status)
             }
         }
     }
@@ -584,7 +598,7 @@ object UploadPipeline {
                     return@withDevice Result.Failure("corrupt download: ${verdict.reason}")
                 }
             }
-            val saved = saveActivityFit(context, timestamp, download.content)
+            val saved = saveActivityFit(context, paired.mac, timestamp, download.content)
             Result.Success(
                 deviceName = paired.name,
                 deviceMac = paired.mac,
@@ -611,9 +625,24 @@ object UploadPipeline {
             else Result.Failure(FileTransfer.deviceStatusName(status), status)
         }
 
-    private fun saveActivityFit(context: Context, timestamp: Long, content: ByteArray): java.io.File {
-        // Scoped external storage — no runtime permissions needed.
-        val dir = java.io.File(context.getExternalFilesDir(null), "activities").apply { mkdirs() }
+    /**
+     * Where [downloadActivity] puts the FIT for `timestamp`. Exposed so
+     * callers can check for an already-downloaded file and skip a second
+     * BLE transfer — activity downloads are slow enough (tens of seconds
+     * for a long ride) that re-fetching one just to share it is worth
+     * avoiding. The file may not exist; check before use.
+     *
+     * Keyed by device as well as timestamp: two paired computers can
+     * hold activities with the same timestamp, and a timestamp-only
+     * cache would hand one device's ride out as the other's. The MAC
+     * goes into a subdirectory rather than the file name, which stays
+     * what the user sees when sharing and what Strava dedupes on.
+     */
+    fun activityFitFile(context: Context, deviceMac: String, timestamp: Long): java.io.File {
+        val dir = java.io.File(
+            java.io.File(context.getExternalFilesDir(null), "activities"),
+            deviceMac.replace(":", "").uppercase(Locale.US),
+        )
         val nameFmt = SimpleDateFormat("yyyyMMdd'T'HHmmss", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
@@ -622,8 +651,18 @@ object UploadPipeline {
         // wall-clock, so stamping them UTC would be a lie. See
         // FitFile.garminToUnixSeconds.
         val unix = FitFile.garminToUnixSeconds(timestamp)
-        val fileName = "${nameFmt.format(Date(unix * 1000L))}.fit"
-        val out = java.io.File(dir, fileName)
+        return java.io.File(dir, "${nameFmt.format(Date(unix * 1000L))}.fit")
+    }
+
+    private fun saveActivityFit(
+        context: Context,
+        deviceMac: String,
+        timestamp: Long,
+        content: ByteArray,
+    ): java.io.File {
+        // Scoped external storage — no runtime permissions needed.
+        val out = activityFitFile(context, deviceMac, timestamp)
+        out.parentFile?.mkdirs()
         out.writeBytes(content)
         return out
     }
@@ -723,6 +762,10 @@ object UploadPipeline {
         BleSessionManager.withSession(context, paired.mac) { transport -> block(transport, paired) }
     } catch (e: CancellationException) {
         throw e
+    } catch (e: DeviceTimeoutException) {
+        // Already a sentence written for the user; prefixing it with
+        // "BLE error:" would only make it read like a crash.
+        Result.Failure(e.message ?: "the device didn't answer")
     } catch (e: Exception) {
         Result.Failure("BLE error: ${e.message}")
     }
@@ -730,6 +773,29 @@ object UploadPipeline {
     private fun bluetoothAdapter(context: Context): BluetoothAdapter? {
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
         return manager?.adapter
+    }
+
+    /**
+     * Flash capacity of one device, or null if it can't be had.
+     *
+     * Deliberately outside [Result]: storage is decoration on the
+     * routes and activities screens, and a device that doesn't answer
+     * [DeviceMemory] should leave those screens looking exactly as
+     * they did before rather than surfacing an error row.
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun deviceMemory(context: Context, targetMac: String? = null): DeviceMemory.Info? {
+        val paired = resolvePaired(context, targetMac) ?: return null
+        return try {
+            BleSessionManager.withSession(context, paired.mac) { transport ->
+                DeviceMemory.read(transport)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "memory read failed for ${paired.mac}", e)
+            null
+        }
     }
 
     // ---- Fan-out helpers --------------------------------------------
@@ -762,6 +828,7 @@ object UploadPipeline {
         fileId: Long = System.currentTimeMillis() / 1000L,
         fileName: String = "route",
         maxAttempts: Int = 1,
+        startNavigation: Boolean = true,
     ): Map<String, Result> {
         val macs = DeviceStore(context).list().map { it.mac }
         if (macs.isEmpty()) return emptyMap()
@@ -777,6 +844,7 @@ object UploadPipeline {
                             fileId = fileId,
                             fileName = fileName,
                             targetMac = mac,
+                            startNavigation = startNavigation,
                         )
                         if (last is Result.Success) return@async last
                         Log.w(

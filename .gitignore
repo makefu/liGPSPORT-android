@@ -30,6 +30,11 @@ keystore.properties
 # Tracked sibling `agps.properties.example` documents the format.
 app/agps.properties
 
+# Strava API credentials — see docs/STRAVA.md. Optional: they only
+# pre-fill the Settings → Strava fields on first run. Tracked sibling
+# `strava.properties.example` documents the format.
+app/strava.properties
+
 # Misc
 .DS_Store
 *.log

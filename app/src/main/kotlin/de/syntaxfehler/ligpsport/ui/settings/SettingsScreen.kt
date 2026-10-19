@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -20,9 +21,11 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +63,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -69,6 +75,8 @@ import de.syntaxfehler.ligpsport.ble.DeviceStore
 import de.syntaxfehler.ligpsport.data.RouterPreferences
 import de.syntaxfehler.ligpsport.route.RouteProvider
 import de.syntaxfehler.ligpsport.route.RouterRegistry
+import de.syntaxfehler.ligpsport.strava.StravaStore
+import de.syntaxfehler.ligpsport.strava.StravaUploader
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,6 +86,7 @@ fun SettingsScreen(
     onOpenRoutes: (mac: String) -> Unit = {},
     onOpenActivities: (mac: String) -> Unit = {},
     onOpenPreviousRides: () -> Unit = {},
+    onOpenMenu: (() -> Unit)? = null,
 ) {
     val ctx = LocalContext.current
     val screenScope = rememberCoroutineScope()
@@ -108,8 +117,14 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    if (onOpenMenu != null) {
+                        IconButton(onClick = onOpenMenu, modifier = Modifier.testTag("open_menu")) {
+                            Icon(Icons.Filled.Menu, contentDescription = "Menu")
+                        }
+                    } else {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
                     }
                 },
             )
@@ -172,6 +187,9 @@ fun SettingsScreen(
             // --- Previous rides -------------------------------------
             item { SectionLabel("Previous rides") }
             item { PreviousRidesRow(onClick = onOpenPreviousRides) }
+
+            // --- Strava ---------------------------------------------
+            item { StravaSection() }
 
             // --- Map markers ----------------------------------------
             item { MarkerHitboxSection() }
@@ -798,6 +816,256 @@ private fun Chip(text: String) {
             Text(text, style = MaterialTheme.typography.labelSmall)
         }
     }
+}
+
+/**
+ * Strava credentials and the switch that reveals the upload button on
+ * each recorded activity.
+ *
+ * Always rendered. A build with credentials in `app/strava.properties`
+ * arrives here pre-filled and already switched on
+ * ([StravaStore.seedFromBuildConfig]); everyone else opts in by pasting
+ * their own from https://www.strava.com/settings/api.
+ *
+ * All three values are required because Strava's access tokens die
+ * after six hours and only the `refresh_token` grant — which needs the
+ * client id and secret — can mint a new one. See docs/STRAVA.md.
+ *
+ * testTags: `strava_card`, `strava_enable`, `strava_client_id`,
+ * `strava_client_secret`, `strava_refresh_token`, `strava_save`,
+ * `strava_test`, `strava_forget`.
+ */
+@Composable
+private fun StravaSection() {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { StravaStore(ctx) }
+
+    var enabled by remember { mutableStateOf(store.enabledFlag()) }
+    var clientId by remember { mutableStateOf(store.clientId()) }
+    var clientSecret by remember { mutableStateOf(store.clientSecret()) }
+    var refreshToken by remember { mutableStateOf(store.refreshToken()) }
+    var reveal by remember { mutableStateOf(false) }
+    var testing by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+    // What's on screen vs. what an upload would actually use. Editing a
+    // field without saving is the easy way to "test" stale credentials
+    // and be baffled by the result, so the buttons key off this.
+    val dirty = clientId != store.clientId() ||
+        clientSecret != store.clientSecret() ||
+        refreshToken != store.refreshToken()
+    val complete = listOf(clientId, clientSecret, refreshToken).none { it.isBlank() }
+
+    fun save() {
+        store.saveCredentials(clientId, clientSecret, refreshToken)
+        // Mirror the store's trimming back into the fields, otherwise a
+        // pasted value with a stray space leaves `dirty` stuck true and
+        // Save looking like it did nothing.
+        clientId = store.clientId()
+        clientSecret = store.clientSecret()
+        refreshToken = store.refreshToken()
+        // The cached access token belonged to the previous credentials,
+        // so any "connected as …" claim is stale from here on.
+        status = null
+    }
+
+    Column {
+        SectionLabel("Strava")
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .testTag("strava_card"),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Send activities to Strava",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Adds an upload button to each row under " +
+                                "Activities on device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = enabled,
+                        onCheckedChange = {
+                            enabled = it
+                            store.setEnabled(it)
+                        },
+                        modifier = Modifier.testTag("strava_enable"),
+                    )
+                }
+
+                if (enabled) {
+                    // Only nag once the switch is on — an untouched
+                    // section shouldn't shout about missing fields.
+                    if (!complete) {
+                        Text(
+                            "Fill in all three values from " +
+                                "strava.com/settings/api. The upload button " +
+                                "stays hidden until then.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    OutlinedTextField(
+                        value = clientId,
+                        onValueChange = { clientId = it },
+                        singleLine = true,
+                        label = { Text("Client ID") },
+                        // Strava client ids are plain integers.
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            autoCorrectEnabled = false,
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("strava_client_id"),
+                    )
+                    SecretField(
+                        value = clientSecret,
+                        onValueChange = { clientSecret = it },
+                        label = "Client secret",
+                        reveal = reveal,
+                        testTag = "strava_client_secret",
+                    )
+                    SecretField(
+                        value = refreshToken,
+                        onValueChange = { refreshToken = it },
+                        label = "Refresh token",
+                        reveal = reveal,
+                        testTag = "strava_refresh_token",
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = { reveal = !reveal }) {
+                            Text(if (reveal) "Hide" else "Show")
+                        }
+                        FilledTonalButton(
+                            onClick = ::save,
+                            enabled = dirty,
+                            modifier = Modifier.testTag("strava_save"),
+                        ) { Text("Save") }
+                        OutlinedButton(
+                            onClick = {
+                                if (dirty) save()
+                                testing = true
+                                status = null
+                                scope.launch {
+                                    val res = withContext(Dispatchers.IO) {
+                                        StravaUploader.testConnection(ctx)
+                                    }
+                                    testing = false
+                                    // A successful test rotated the refresh
+                                    // token in the store. Leaving the pasted
+                                    // one in the field would mark the form
+                                    // dirty, and the next Save would write
+                                    // the superseded token back.
+                                    refreshToken = store.refreshToken()
+                                    status = when (res) {
+                                        is StravaUploader.TestResult.Ok ->
+                                            (
+                                                res.athleteName?.let { "Connected as $it" }
+                                                    ?: "Credentials accepted"
+                                            ) to true
+                                        is StravaUploader.TestResult.Failed ->
+                                            "Failed: ${res.reason}" to false
+                                    }
+                                }
+                            },
+                            enabled = complete && !testing,
+                            modifier = Modifier.testTag("strava_test"),
+                        ) {
+                            if (testing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text("Test connection")
+                            }
+                        }
+                    }
+                    status?.let { (message, ok) ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (ok) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                    Text(
+                        "Uploads are muted from followers' feeds, which is not " +
+                            "the same as private — set your default activity " +
+                            "visibility on Strava. Credentials are stored " +
+                            "unencrypted in app-private storage; revoke access " +
+                            "at strava.com/settings/apps.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(
+                        onClick = {
+                            store.clear()
+                            clientId = ""
+                            clientSecret = ""
+                            refreshToken = ""
+                            enabled = false
+                            status = null
+                        },
+                        modifier = Modifier.testTag("strava_forget"),
+                    ) { Text("Forget credentials") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Masked credential input with a shared reveal toggle. Masking is
+ * shoulder-surfing hygiene, not storage security — these land in plain
+ * `SharedPreferences` either way.
+ */
+@Composable
+private fun SecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    reveal: Boolean,
+    testTag: String,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        label = { Text(label) },
+        visualTransformation = if (reveal) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        // Opaque tokens: IME suggestions and autocorrect can only
+        // mangle them, and a password keyboard keeps them out of the
+        // IME's learned words.
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Password,
+            autoCorrectEnabled = false,
+        ),
+        modifier = Modifier.fillMaxWidth().testTag(testTag),
+    )
 }
 
 /**

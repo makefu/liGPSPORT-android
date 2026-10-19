@@ -1,0 +1,27 @@
+# Template for `strava.properties`. Copy this file to
+# `strava.properties` (gitignored sibling, same directory) and fill in
+# the credentials from https://www.strava.com/settings/api. See
+# `docs/STRAVA.md` for the full walkthrough, including how to mint a
+# refresh token with the `activity:write` scope.
+#
+# ALL OF THIS IS OPTIONAL. Strava upload is configured in the app under
+# Settings -> Strava, and works on a build that carries nothing here.
+# What these values buy you is a personal build that arrives pre-filled
+# and already switched on: StravaStore.seedFromBuildConfig copies them
+# into the editable settings on first run, once. Edits and "Forget
+# credentials" in Settings win from then on.
+#
+# This file is the primary source for BuildConfig.STRAVA_CLIENT_ID,
+# _CLIENT_SECRET and _REFRESH_TOKEN — it overrides the matching
+# LIGPSPORT_STRAVA_* env vars when present.
+#
+# The secret is embedded in the APK: Strava requires client_secret for
+# the token refresh and does not support PKCE, so there is nowhere else
+# for it to live in a native app. Don't distribute a build that has
+# real credentials baked in — anyone can extract them and act as your
+# API application. Rotate on the settings page if that happens.
+client_id=
+client_secret=
+# Per-athlete rather than per-application, so leave this empty unless
+# the build is only for you. Strava rotates it on first use.
+refresh_token=

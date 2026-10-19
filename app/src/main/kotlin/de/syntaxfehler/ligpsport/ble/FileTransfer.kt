@@ -15,8 +15,31 @@ import java.io.ByteArrayOutputStream
  * implementation), so we don't depend on the protobuf-kotlin-lite
  * runtime here.
  */
+/**
+ * The device accepted the request but never answered it.
+ *
+ * Distinct from an empty result on purpose: the two used to be the
+ * same `emptyList()`, so a device that hadn't replied yet was reported
+ * to the user as "no routes" / "no activities" — the most misleading
+ * thing the screen could have said.
+ */
+class DeviceTimeoutException(message: String) : Exception(message)
+
 object FileTransfer {
     private const val TAG = "FileTransfer"
+
+    /**
+     * Per-attempt waits for a LIST_GET answer.
+     *
+     * The first LIST_GET after a connect is routinely never answered —
+     * observed on a BSC200 timing out at a full 45 s, then succeeding
+     * within seconds once the request was sent again. So this retries
+     * rather than waiting longer: the first probe is deliberately short
+     * because a request that is going to be answered is answered
+     * quickly, and a long first wait is pure dead time on the screen.
+     * The later, longer waits cover a device that really is just slow.
+     */
+    private val LIST_ATTEMPT_TIMEOUTS_MS = longArrayOf(5_000, 15_000, 25_000)
 
     // common.proto enum values
     private const val SERVICE_FILE_OPERATION = 21
@@ -282,7 +305,7 @@ object FileTransfer {
      */
     suspend fun listRoutes(
         transport: Transport,
-        timeoutMs: Long = 10_000,
+        attemptTimeouts: LongArray = LIST_ATTEMPT_TIMEOUTS_MS,
     ): List<RouteEntry> {
         val body = buildRoutePlanListPb()
         val wire = buildFrame(
@@ -297,11 +320,8 @@ object FileTransfer {
             val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
             parsed?.takeIf { it.service == SERVICE_ROUTE_PLAN }
         }
-        transport.send(wire, Channel.CONTROL)
-        val ack: Frame? = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }
-        if (ack == null) {
-            Log.w(TAG, "list-routes timed out")
-            return emptyList()
+        val ack = requestWithRetry("list-routes", transport, attemptTimeouts, filtered) {
+            transport.send(wire, Channel.CONTROL)
         }
         if (ack.payload.isEmpty()) {
             // Confirm-only reply (no payload) — empty list or error.
@@ -350,7 +370,11 @@ object FileTransfer {
      * populated by BSC200 firmware — use this instead.
      */
     suspend fun navStatus(transport: Transport, timeoutMs: Long = 10_000): NavStatus {
-        val routes = listRoutes(transport, timeoutMs)
+        // Single attempt: this is the every-15-s poll, so retrying here
+        // would keep the device leased across several polls' worth of
+        // time. A miss shows "Connecting…" and the next poll retries
+        // anyway.
+        val routes = listRoutes(transport, longArrayOf(timeoutMs))
         val active = routes.firstOrNull { it.status == ROUTE_PLAN_FILE_STATUS_USED }
         return if (active != null) {
             NavStatus(isNavigating = true, activeRouteId = active.id, activeRouteName = active.name)
@@ -419,7 +443,10 @@ object FileTransfer {
         transport: Transport,
         timeoutMs: Long = 15_000,
     ): UploadResult {
-        val routes = listRoutes(transport, timeoutMs)
+        // Retrying default, not `timeoutMs`: an unanswered list here
+        // used to come back empty and be reported as "no routes on
+        // device" — success, for a wipe that never happened.
+        val routes = listRoutes(transport)
         if (routes.isEmpty()) {
             return UploadResult(true, "no routes on device", STATUS_OK)
         }
@@ -706,7 +733,7 @@ object FileTransfer {
         transport: Transport,
         fileIndexStart: Int = 0,
         fileIndexEnd: Int = 100,
-        timeoutMs: Long = 10_000,
+        attemptTimeouts: LongArray = LIST_ATTEMPT_TIMEOUTS_MS,
     ): List<ActivityListEntry> {
         val body = buildCyclingDataListGetPb(fileIndexStart, fileIndexEnd)
         val head = buildCyclingDataHead(body, op = CYCLING_DATA_OP_LIST_GET, fileTag = FILE_TAG_DEFAULT)
@@ -716,10 +743,8 @@ object FileTransfer {
             val parsed = try { parseFrame(rf.bytes) } catch (_: Exception) { null }
             parsed?.takeIf { it.service == SERVICE_CYCLING_DATA }
         }
-        transport.send(merged, Channel.THIRD)
-        val ack: Frame = withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() } ?: run {
-            Log.w(TAG, "list-activities timed out")
-            return emptyList()
+        val ack = requestWithRetry("list-activities", transport, attemptTimeouts, filtered) {
+            transport.send(merged, Channel.THIRD)
         }
         if (ack.payload.isEmpty()) {
             Log.i(TAG, "list-activities: confirm-only reply, status=${ack.status}")
@@ -1025,6 +1050,45 @@ object FileTransfer {
 
     /** Minimal proto2 reader for the LIST_GET response — varint /
      *  length-delimited / fixed64 / fixed32 wire types only. */
+    /**
+     * Send a request and wait for the first frame [filtered] accepts,
+     * re-sending on each timeout.
+     *
+     * Retrying rather than waiting longer, because the failure this
+     * exists for is a request that is never answered at all — a longer
+     * wait just spends more time on the same silence. Each attempt
+     * drains first, so a late answer to an earlier attempt can't be
+     * mistaken for this one's, and a stranded half-frame can't prefix
+     * it.
+     *
+     * On the final timeout the per-channel buffer state goes into the
+     * log: the reassembly path fails silently, so zero pending bytes
+     * ("nothing came back") and a stalled partial frame ("the reply
+     * started and stopped") are otherwise the same observation.
+     */
+    private suspend fun requestWithRetry(
+        what: String,
+        transport: Transport,
+        attemptTimeouts: LongArray,
+        filtered: kotlinx.coroutines.flow.Flow<Frame>,
+        send: suspend () -> Unit,
+    ): Frame {
+        attemptTimeouts.forEachIndexed { index, timeoutMs ->
+            transport.drain()
+            send()
+            withTimeoutOrNull(timeoutMs) { filtered.firstOrNull() }?.let { return it }
+            Log.w(
+                TAG,
+                "$what attempt ${index + 1}/${attemptTimeouts.size} got no reply in ${timeoutMs}ms" +
+                    if (index == attemptTimeouts.lastIndex) "; pending=${transport.pendingRx()}" else "",
+            )
+        }
+        val waited = attemptTimeouts.sum() / 1000
+        throw DeviceTimeoutException(
+            "the device didn't answer after ${attemptTimeouts.size} tries over ${waited}s",
+        )
+    }
+
     internal class ProtoReader(private val buf: ByteArray) {
         private var pos = 0
         fun hasMore(): Boolean = pos < buf.size

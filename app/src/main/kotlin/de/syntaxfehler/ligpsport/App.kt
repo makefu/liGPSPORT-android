@@ -2,6 +2,7 @@ package de.syntaxfehler.ligpsport
 
 import android.app.Application
 import android.content.Context
+import de.syntaxfehler.ligpsport.strava.StravaStore
 import org.osmdroid.config.Configuration
 
 /**
@@ -60,5 +61,11 @@ class App : Application() {
         cfg.cacheMapTileOvershoot = 20.toShort()
 
         cfg.save(this, prefs)
+
+        // One-shot: copies any Strava credentials baked in at build
+        // time into the editable Settings fields and enables the
+        // feature. A no-op on every launch after the first, and on
+        // builds that carry no credentials.
+        StravaStore(this).seedFromBuildConfig()
     }
 }

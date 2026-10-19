@@ -31,16 +31,21 @@ Use it as your protocol oracle, not as a runtime dependency.
 │   │   │   ├── FileTransfer.kt     uploadGeneralFile / startNavigation / listRoutes / navStatus / deleteRoutesById / listActivities / downloadActivity / deleteActivity / deleteAllActivities
 │   │   │   ├── AgpsClient.kt       AssistNow Online fetch (UBX-MGA payload)
 │   │   │   ├── LocationInjector.kt FACTORY GPS_COORDINATE_SET (position prior)
+│   │   │   ├── DeviceMemory.kt     FACTORY MEMORY_GET (flash total / remain) — UNVERIFIED on hardware
 │   │   │   └── UploadPipeline.kt   high-level orchestration (GPX→CNX→AGPS→seed→upload→FILE_USE)
 │   │   ├── data/AgpsSeedStore.kt   per-device "last AGPS seed" record + 2 h freshness gate
 │   │   ├── route/                  GPX parser, CNX encoder, pluggable RouteProvider (brouter / osrm / straightline)
 │   │   ├── search/PhotonClient.kt  type-ahead geocoder
 │   │   ├── ui/
+│   │   │   ├── nav/AppDrawer.kt              AppDestination enum + navigation-drawer sheet
 │   │   │   ├── map/MapScreen.kt              Compose map + auto-plan-on-tap
 │   │   │   ├── map/NavStatusOverlay.kt       bottom-left nav-status pill (LIST_GET poll)
 │   │   │   ├── settings/SettingsScreen.kt    paired device + router + Device-files sub-section rows
-│   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (sub-screen)
-│   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (sub-screen)
+│   │   │   ├── settings/DeviceRoutesScreen.kt list / delete / wipe routes (drawer + sub-screen)
+│   │   │   ├── settings/DeviceActivitiesScreen.kt list / download / delete activities (drawer + sub-screen)
+│   │   │   ├── settings/DeviceSwitcherTitle.kt top-bar device dropdown shared by both
+│   │   │   ├── settings/DeviceStorageRow.kt  flash-usage footer shared by both
+│   │   │   ├── gpx/GpxImportScreen.kt        pick a .gpx (SAF) → preview → fan-out upload
 │   │   │   ├── pairing/PairingScreen.kt      BLE scan UI
 │   │   │   ├── upload/UploadScreen.kt        Auto-runs BLE pipeline on entry
 │   │   │   └── share/                        Android share intent → CNX path
@@ -112,7 +117,7 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.PAIR` | service | — | `name=`, `mac=` |
 | `…action.UNPAIR` | inline | — | — |
 | `…action.STATUS` | inline | — | `bt_enabled=`, `paired_mac=`, `paired_name=` |
-| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `nav_started=` (true/false), `device_status=` |
+| `…action.UPLOAD` | service | `--es gpx_b64` (preferred) **or** `--es path` **or** `--es gpx` (inline xml) **or** `--es uri`; optional `--el file_id`, `--es name` | `file_id=`, `cnx_bytes=`, `points=`, `nav_started=` (true/false; absent when navigation wasn't attempted), `device_status=` |
 | `…action.PLAN_AND_UPLOAD` | service | `--ef end_lat,end_lon` (required); `--ef start_lat,start_lon` optional — if absent, the service resolves current location via `MockLocationStore` → `FusedLocationProviderClient.getCurrentLocation` → `lastLocation`; optional `--es profile`, `--el file_id`, `--es name` | `provider=` (which router was used), plus all UPLOAD keys |
 | `…action.LIST_ROUTES` | service | — | `count=`, `r<N>_id=`, `r<N>_name=`, `r<N>_dist_m=` |
 | `…action.NAV_STATUS` | service | — | `is_navigating=true\|false`, `active_route_id=`, `active_route_name=` — reads `ROUTE_PLAN LIST_GET` and scans for `enum_USED_STATUS = 1` (PROTOCOL.md §7.3). `DEV_STATUS.navi_status` is documented but never populated by BSC200 firmware; the LIST_GET route-status byte is the only honest signal. |
@@ -125,7 +130,7 @@ The harness greps by `req_id=<Y>` (mandatory `--es req_id <id>` or
 | `…action.SEND_AGPS` | service | — | `agps_bytes=`, `device_status=` — fetches u-blox AssistNow Online and uploads as `file_type=AGPS(7)`. Token is auto-resolved from iGPSport's prod config endpoint (mirrors the official app) when `LIGPSPORT_AGPS_TOKEN` is unset; the env var overrides it when you have your own u-blox AssistNow token. Always forces a fetch+push and records the result in `AgpsSeedStore`. Also piggybacked on `UPLOAD` / `PLAN_AND_UPLOAD` (best-effort: failure doesn't fail the route) — but **only when the target device's last seed is older than `AgpsSeedStore.DEFAULT_TTL_MS` (2 h)**, so a fresh device shows no `agps_bytes=` and logs `agps: skipping <mac> — seeded <n>min ago`. |
 | `…action.SEND_LOCATION` | service | — | `seed_lat=`, `seed_lon=`, `device_status=` — injects the current location as a position prior via the FACTORY `GPS_COORDINATE_SET` op (service=11, op=8). Resolves via `MockLocationStore` → `FusedLocationProviderClient` → `lastLocation`. Also piggybacked silently on every `UPLOAD` / `PLAN_AND_UPLOAD` between the AGPS step and the route upload — successful piggyback shows `seed_lat=` + `seed_lon=` on those RESULT lines. |
 | `…action.LIST_ACTIVITIES` | service | — | `count=`, `a<N>_ts=`, `a<N>_size=` per recorded activity — `CYCLING_DATA LIST_GET` (op=1) on the third UART, gen-4 merged write. PROTOCOL.md §6.4. |
-| `…action.DOWNLOAD_ACTIVITY` | service | `--el timestamp` (long, required) | `timestamp=`, `bytes=`, `saved_path=`, `file_name=`, `device_status=` — `CYCLING_DATA FILE_GET` (op=3) with `file_tag=0x55` (TransmitCompleteCommand). Saves the FIT to `getExternalFilesDir(null)/activities/<UTC-ISO8601>.fit`. |
+| `…action.DOWNLOAD_ACTIVITY` | service | `--el timestamp` (long, required) | `timestamp=`, `bytes=`, `saved_path=`, `file_name=`, `device_status=` — `CYCLING_DATA FILE_GET` (op=3) with `file_tag=0x55` (TransmitCompleteCommand). Saves the FIT to `getExternalFilesDir(null)/activities/<MAC without colons>/<yyyyMMddTHHmmss>.fit`. |
 | `…action.DELETE_ACTIVITY` | service | `--el timestamp` (long, required) | `timestamp=`, `device_status=` — `CYCLING_DATA FILE_DEL` (op=5) on the third UART, gen-4 merged write. Destructive. |
 | `…action.DELETE_ALL_ACTIVITIES` | service | `--es confirm true` (gate) | `device_status=` — DESTRUCTIVE; `CYCLING_DATA ALL_DEL` (op=6) merged-write on the third UART. The smali documents a split-write recipe for ALL_DEL but the live BSC200 firmware (2024-05-14) accepts only the merged form — see PROTOCOL.md §6.4 / §7.5. |
 
@@ -210,9 +215,12 @@ new destination.
 
 ### Auto-start navigation after upload
 
-Every successful `UploadPipeline.uploadGpx` issues a follow-up
+A successful `UploadPipeline.uploadGpx` issues a follow-up
 `FileTransfer.startNavigation` (`ROUTE_PLAN FILE_USE`, op=5) once the
-device acks the chunked upload. This mirrors the iGPSPORT app's
+device acks the chunked upload, unless the caller passes
+`startNavigation = false`. The map does not; the GPX imports (Upload
+GPX screen, share sheet) do, since filing a route away shouldn't take
+over the head unit. This mirrors the iGPSPORT app's
 "send and use" flow (`RoadBookSearchActivity.sendFileToDevice` →
 `IGPDeviceManager.setRoutePlanFile`). The wire format is the gen-4
 single merged write of (20-byte head ‖ protobuf body) on the
@@ -220,7 +228,8 @@ FOURTH characteristic, *not* the body/header split across two
 characteristics — see PROTOCOL.md §7.2 for the byte-for-byte
 reference and the smali source. Failure is non-fatal (the upload
 itself still counts as success); the result line surfaces
-`nav_started=true|false` either way.
+`nav_started=true|false`, and omits the key when navigation was not
+attempted.
 
 ### Other UX invariants
 
@@ -257,8 +266,9 @@ itself still counts as success); the result line surfaces
   destination before the lookup returns, the stale result is
   discarded.
 - **The destination name becomes the upload file name**, sanitised
-  for the BSC200 firmware (ASCII alphanumerics + `_-.`, spaces →
-  `_`, max 32 chars). See `ui/upload/UploadScreen.kt#sanitiseFileName`
+  for the BSC200 firmware (ASCII alphanumerics, spaces and `_-.`;
+  whitespace runs collapse to one space; max 32 chars). Spaces are
+  kept: the device displays them fine. See `ui/upload/UploadScreen.kt#sanitiseFileName`
   and its unit-test contract in
   `app/src/test/kotlin/.../ui/upload/FileNameSanitiserTest.kt`. The
   adb harness path is unaffected — it passes its own `--es name`
@@ -273,8 +283,13 @@ The instrumented tests + adb harness identify UI surfaces by
 |---|---|
 | `osm_map` | The `AndroidView` hosting the osmdroid `MapView` |
 | `search_bar` | DockedSearchBar at the top of Map |
-| `settings_fab` | Gear-icon FAB, bottom-end |
-| `my_location_fab` | My-location FAB stacked above settings; shown only once a GPS fix is available |
+| `menu_fab` | Hamburger FAB, bottom-end — the map's way into the navigation drawer (it has no app bar) |
+| `my_location_fab` | My-location FAB stacked above the menu FAB; shown only once a GPS fix is available |
+| `drawer_sheet` / `drawer_<route>` | Navigation drawer and its items; routes are `map` / `activities` / `routes` / `upload_gpx` / `settings` (see `ui/nav/AppDestination`) |
+| `open_menu` | Hamburger in a top-level screen's app bar. Absent when the screen was pushed from a Settings device row — that shows a back arrow instead |
+| `device_storage` | Flash-usage card at the foot of the routes / activities lists. **Absent whenever the device doesn't answer FACTORY MEMORY_GET** — do not assert on it unconditionally |
+| `gpx_import` / `gpx_pick` / `gpx_upload` / `gpx_summary` / `gpx_status` | Upload GPX screen: surface, file picker, upload button, parsed-file card, result line |
+| `device_switcher` / `device_option_<mac>` | Top-bar device dropdown on the routes / activities screens. The dropdown only opens when more than one device is paired |
 | `destination_card` | Bottom card on Map when a destination is set |
 | `plan_button` | Plan / Re-plan button inside the destination card |
 | `upload_button` | Upload button inside the destination card |
@@ -286,7 +301,8 @@ The instrumented tests + adb harness identify UI surfaces by
 | `routes_list` / `refresh_routes` / `delete_all_routes` / `confirm_delete_all` | DeviceRoutesScreen surface + actions |
 | `route_<id>` / `delete_route_<id>` | Per-route row + its delete icon button (DeviceRoutesScreen) |
 | `activities_list` / `refresh_activities` / `delete_all_activities` / `confirm_delete_all_activities` | DeviceActivitiesScreen surface + actions |
-| `activity_<timestamp>` / `download_activity_<timestamp>` / `delete_activity_<timestamp>` | Per-activity row + its action icon buttons (DeviceActivitiesScreen) |
+| `activity_<timestamp>` / `download_activity_<timestamp>` / `share_activity_<timestamp>` / `strava_activity_<timestamp>` / `delete_activity_<timestamp>` | Per-activity row + its action icon buttons (DeviceActivitiesScreen). The Strava button only renders when `StravaStore.isEnabled()` — the switch is on *and* all three credentials are set. |
+| `strava_card` / `strava_enable` / `strava_client_id` / `strava_client_secret` / `strava_refresh_token` / `strava_save` / `strava_test` / `strava_forget` | Settings → Strava section. Always present; the fields below the switch only render once it is on. |
 
 ## Routing providers
 
