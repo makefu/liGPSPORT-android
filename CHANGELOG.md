@@ -4,7 +4,11 @@ All notable changes to this project are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.0] — 2026-11-01
+
+Strava upload from the activities list, an in-app GPX import, a
+navigation drawer, a device-storage readout — plus the BLE receive-path
+fixes that made long activity downloads trustworthy.
 
 ### Added
 
@@ -330,6 +334,8 @@ reliable again.
   Settings shows each device's last-seed time and remaining validity,
   with a **Seed now** button that ignores the freshness check for the
   case where a computer still refuses to get a fix.
+
+[1.4.0]: https://github.com/makefu/liGPSPORT-android/releases/tag/v1.4.0
 
 ## [1.2.0] — 2026-05-17
 

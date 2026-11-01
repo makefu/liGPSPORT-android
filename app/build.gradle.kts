@@ -17,8 +17,8 @@ android {
         applicationId = "de.syntaxfehler.ligpsport"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.3.0"
+        versionCode = 9
+        versionName = "1.4.0"
         testInstrumentationRunner = "de.syntaxfehler.ligpsport.HiltTestRunner"
         vectorDrawables { useSupportLibrary = true }
 
